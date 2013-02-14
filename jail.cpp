@@ -6,6 +6,8 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
+#include <pwd.h>
+#include <stdio.h>
 
 #include "report.h"
 #include "config.h"
@@ -14,12 +16,16 @@
 
 using namespace std;
 
+int syscall_failed(const char* msg) {
+  perror(msg);
+  return 1;
+}
+
 void setlimit(int res, int hardlimit) {
     struct rlimit rl;
     rl.rlim_cur = rl.rlim_max = hardlimit;
     if(setrlimit(res, &rl)) {
-        cerr << "setrlimit for " << res << " failed :'(" << endl;
-        exit(1);
+        exit(syscall_failed("setrlimit"));
     }
 }
 
@@ -45,15 +51,61 @@ int main(int argc, char ** argv) {
         // Do we want to change to a different user (say nobody)?
         // Do we want to set some resource limits here?
 
+        struct passwd* pw_user = NULL;
+        struct passwd* pw_group = NULL;
+        if(!get_group().empty()) {
+          pw_group = getpwnam(get_group().c_str());
+          if(!pw_group) {
+            return syscall_failed("Failed to look up group id");
+          }
+        }
+        if(!get_user().empty()) {
+          pw_user = getpwnam(get_user().c_str());
+          if(!pw_user) {
+            return syscall_failed("Failed to look up user id");
+          }
+        }
 
-        // Do we want to limit entire address space size or just data segment?
-        if(get_time() > 0) setlimit(RLIMIT_CPU, get_time());
-        if(get_mem() > 0) setlimit(RLIMIT_AS, get_mem());
+#ifdef PATH_MAX
+        char chroot_path[PATH_MAX];
+#else
+        char chroot_path[4096];
+#endif
+        if(!get_chroot().empty()) {
+          if(chroot_path != realpath(get_chroot().c_str(), chroot_path)) {
+            return syscall_failed("Failed to find real path of chroot");
+          }
+        }
+        if(!get_cwd().empty()) {
+          if(chdir(get_cwd().c_str())) {
+            return syscall_failed("Failed to change working directory");
+          }
+        }
+        if(!get_chroot().empty()) {
+          if(chroot(chroot_path)) {
+            return syscall_failed("Failed to change root directory");
+          }
+        }
+        if(get_time() != TIME_NO_LIMIT) {
+          setlimit(RLIMIT_CPU, get_time());
+        }
+        if(get_mem() != MEM_NO_LIMIT) {
+          setlimit(RLIMIT_AS, get_mem());
+        }
+        if(pw_group) {
+          if(setgid(pw_group->pw_uid) || setegid(pw_group->pw_uid)) {
+            return syscall_failed("Failed to set group id");
+          }
+        }
+        if(pw_user) {
+          if(setuid(pw_user->pw_uid) || seteuid(pw_user->pw_uid)) {
+            return syscall_failed("Failed to set user id");
+          }
+        }
 
         ptrace(PTRACE_TRACEME, 0, NULL, NULL);
         execvp(argv[res], argv + res);
-        cerr << "Jailee execvp failed" << endl;
-        return 1;
+        return syscall_failed("execvp");
     }
 
     if(!init_report()) {

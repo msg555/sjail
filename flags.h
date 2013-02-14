@@ -1,15 +1,30 @@
 #ifdef FLAG_SECTION
 FLAG_SECTION("General")
 #endif
-REGISTER_FLAG(help, 0, bool, false, "Displays this message.")
-REGISTER_FLAG(passive, 1, bool, false, "Only monitor jailed program.  Do not block any system calls.")
-REGISTER_FLAG(conf_file, 1, string, "jail.conf", "Read in configuration key value pairs from file.  Default is jail.conf")
+REGISTER_FLAG(help, 0, bool, false,
+              "Displays this message.")
+REGISTER_FLAG(passive, 1, bool, false,
+              "Only monitor jailed program.  Do not block any system calls. "
+              "Does not affect flags in resources section")
+REGISTER_FLAG(conf_file, 1, string, "jail.conf",
+              "Read in configuration key value pairs from file. "
+              "Default is jail.conf")
 
 #ifdef FLAG_SECTION
 FLAG_SECTION("Resources")
 #endif
-REGISTER_FLAG(time, 1, int, TIME_NO_LIMIT, "The allowed runtime of the program.  Default is no limit.")
-REGISTER_FLAG(mem, 1, int, MEM_NO_LIMIT, "The allowed memory limit of the program.  Default is no limit.")
+REGISTER_FLAG(time, 1, int, TIME_NO_LIMIT,
+              "The allowed runtime of the program. Default is no limit.")
+REGISTER_FLAG(mem, 1, int, MEM_NO_LIMIT,
+              "The allowed memory limit of the program. Default is no limit.")
+REGISTER_FLAG(cwd, 0, string, "", "Working directory of client application. "
+              "This is called prior to any root changes.")
+REGISTER_FLAG(chroot, 0, string, "",
+              "Path to set as root.  Jail must be run as root to use this, "
+              "therefore this flag should typically be coupled with "
+              "user/group flags.")
+REGISTER_FLAG(user, 1, string, "", "User to switch to.")
+REGISTER_FLAG(group, 1, string, "", "Group to switch to.")
 
 #ifdef FLAG_SECTION
 FLAG_SECTION("Network options")
