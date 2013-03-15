@@ -82,14 +82,14 @@ void process_system_call(int pid) {
   unsigned long state;
 
   #ifdef __x86_64__
-  unsigned long & sys_num = reg.orig_rax;
-  unsigned long & result = reg.rax;
-  unsigned long & param1 = reg.rdi;
-  unsigned long & param2 = reg.rsi;
-  unsigned long & param3 = reg.rdx;
-  unsigned long & param4 = reg.rcx;
-  unsigned long & param5 = reg.r8;
-  unsigned long & param6 = reg.r9;
+  unsigned long long & sys_num = reg.orig_rax;
+  unsigned long long & result = reg.rax;
+  unsigned long long & param1 = reg.rdi;
+  unsigned long long & param2 = reg.rsi;
+  unsigned long long & param3 = reg.rdx;
+  unsigned long long & param4 = reg.rcx;
+  unsigned long long & param5 = reg.r8;
+  unsigned long long & param6 = reg.r9;
   #endif
   #ifdef __i386__
   long & sys_num = reg.orig_eax;

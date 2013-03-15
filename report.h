@@ -6,6 +6,7 @@
 using namespace std;
 
 bool init_report();
+bool finalize_report();
 
 void log_exit_status(int exit_status);
 void log_term_signal(int term_signal);

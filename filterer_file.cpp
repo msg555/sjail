@@ -18,6 +18,7 @@ bool is_file_allowed(string file) {
             regfree(&r);
             return true;
         }
+	regfree(&r);
     }
     return false;
 }

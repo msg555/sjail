@@ -14,6 +14,10 @@ bool init_report() {
   return !get_report() || (fout = fopen(get_report_file().c_str(), "w"));
 }
 
+bool finalize_report(){
+  return !fclose(fout);
+}
+
 void log_exit_status(int exit_status) {
   if(fout) {
     fprintf(fout, "exit_status  %d\n", exit_status);

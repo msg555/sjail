@@ -1,5 +1,7 @@
 #include <iostream>
 #include <cstdlib>
+
+#include <unistd.h>
 #include <errno.h>
 #include <sys/ptrace.h>
 #include <sys/types.h>
@@ -132,7 +134,8 @@ int main(int argc, char ** argv) {
             //       returned true.
             DEBUG("Child terminated with signal " << get_signal_name(WTERMSIG(status)));
             log_term_signal(WTERMSIG(status));
-            return 0;
+            finalize_report();
+	    return 0;
         } else if(WIFEXITED(status)) {
             //WIFEXITED(status)
             //       returns true if the child terminated normally, that is, by
@@ -145,7 +148,8 @@ int main(int argc, char ** argv) {
             //       employed if WIFEXITED returned true.
             DEBUG("Child process exited with status " << WEXITSTATUS(status));
             log_exit_status(WEXITSTATUS(status));
-            return 0;
+            finalize_report();
+	    return 0;
         } else if(WIFSTOPPED(status)) {
             //WIFSTOPPED(status)
             //       returns true if the child process was stopped by delivery of a
@@ -164,7 +168,8 @@ int main(int argc, char ** argv) {
                 }
             } else if(sig == SIGSEGV) {
                 kill(pid, SIGKILL);
-                return 0;
+                finalize_report(); //TODO: pass signal?
+		return 0;
             } else {
                 DEBUG("Child was stopped by signal " << get_signal_name(sig));
             }

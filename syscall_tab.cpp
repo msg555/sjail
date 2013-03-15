@@ -336,7 +336,8 @@ static void initialize() {
   syscall_tab[SYS_lchown32] = "SYS_lchown32";
   syscall_tab[SYS_lock] = "SYS_lock";
   syscall_tab[SYS_lstat64] = "SYS_lstat64";
-  syscall_tab[SYS_madvise1] = "SYS_madvise1";
+  // Not implemented in linux
+  // syscall_tab[SYS_madvise1] = "SYS_madvise1";
   syscall_tab[SYS_mmap2] = "SYS_mmap2";
   syscall_tab[SYS_mpx] = "SYS_mpx";
   syscall_tab[SYS_nice] = "SYS_nice";
