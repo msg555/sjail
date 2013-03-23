@@ -23,9 +23,10 @@ int syscall_failed(const char* msg) {
   return 1;
 }
 
-void setlimit(int res, int hardlimit) {
+void setlimit(int res, rlim_t softlimit) {
     struct rlimit rl;
-    rl.rlim_cur = rl.rlim_max = hardlimit;
+    rl.rlim_cur = softlimit;
+    rl.rlim_max = softlimit+softlimit/4;
     if(setrlimit(res, &rl)) {
         exit(syscall_failed("setrlimit"));
     }
@@ -166,16 +167,13 @@ int main(int argc, char ** argv) {
                   kill(pid, SIGKILL);
                   return 1;
                 }
-            } else if(sig == SIGSEGV) {
-                kill(pid, SIGKILL);
-                finalize_report(); //TODO: pass signal?
-		return 0;
-            } else {
-                DEBUG("Child was stopped by signal " << get_signal_name(sig));
-            }
-
-            errno = 0;
-            ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
+		// Dont want to pass SIG_TRAP to process
+		sig = 0;
+	    }
+            
+	    errno = 0;
+            //passing signal to process (it should exit most of the time)
+	    ptrace(PTRACE_SYSCALL, pid, NULL, sig);
             if(errno) {
                 cerr << "ptrace resume failed" << endl;
                 kill(pid, SIGKILL);

@@ -13,12 +13,14 @@ REGISTER_FLAG(conf_file, 1, string, "jail.conf",
 #ifdef FLAG_SECTION
 FLAG_SECTION("Resources")
 #endif
-REGISTER_FLAG(time, 1, int, TIME_NO_LIMIT,
+REGISTER_FLAG(time, 1, rlim_t, TIME_NO_LIMIT,
               "The allowed runtime of the program. Default is no limit.")
-REGISTER_FLAG(mem, 1, int, MEM_NO_LIMIT,
+REGISTER_FLAG(mem, 1, rlim_t, MEM_NO_LIMIT,
               "The allowed memory limit of the program. Default is no limit.")
 REGISTER_FLAG(cwd, 0, string, "", "Working directory of client application. "
               "This is called prior to any root changes.")
+REGISTER_FLAG(local, 0, bool, false,
+              "Allows files in the cwd directory of the jail process.")
 REGISTER_FLAG(chroot, 0, string, "",
               "Path to set as root.  Jail must be run as root to use this, "
               "therefore this flag should typically be coupled with "

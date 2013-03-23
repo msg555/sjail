@@ -3,6 +3,9 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/limits.h>
+#include <libgen.h>
+#include <unistd.h>
+#include <cstring>
 
 #include "report.h"
 #include "config.h"
@@ -19,6 +22,24 @@ bool is_file_allowed(string file) {
             return true;
         }
 	regfree(&r);
+    }
+
+    if(get_local()){
+#ifdef PATH_MAX
+        char path[PATH_MAX], file_c[PATH_MAX];
+	strncpy(file_c, file.c_str(), PATH_MAX);
+	getcwd(path, PATH_MAX);
+	file_c[PATH_MAX-1] = path[PATH_MAX-1] = '\0';
+#else
+	char path[4096], file_c[PATH_MAX];
+	strncpy(file_c, file.c_str(), 4096);
+	getcwd(path, 4096);
+	file_c[4096-1] = path[4096-1] = '\0';
+#endif
+	if(!strcmp(path, dirname(file_c))) {
+		return true;
+	}
+	
     }
     return false;
 }
