@@ -59,7 +59,7 @@ bool process_fileopen(unsigned long param1, unsigned long param2, int pid) {
     }
 
     if(!is_file_allowed(string(fullpath))) {
-        log_violation("Attempt to access restricted file: " + string(file));
+        log_violation("Attempt to access restricted file:" + string(file));
         return false;
     }
 

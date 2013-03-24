@@ -2,11 +2,12 @@
 #define __REPORT_H
 
 #include <iostream>
+#include <sys/resource.h>
 
 using namespace std;
 
 bool init_report();
-bool finalize_report();
+bool finalize_report(const rusage&);
 
 void log_exit_status(int exit_status);
 void log_term_signal(int term_signal);
