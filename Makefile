@@ -1,4 +1,4 @@
-CPPFLAGS = -O2
+CPPFLAGS = -O3 -DNDEBUG
 
 OBJECTS = \
   out/config.o \
@@ -24,17 +24,17 @@ all: jail jailm32
 
 out/m32/%.o: %.cpp
 	@mkdir -p `dirname out/m32/$*.o`
-	g++ -m32 $(CFLAGS) -c $*.cpp -o out/m32/$*.o
+	g++ -m32 $(CPPFLAGS) -c $*.cpp -o out/m32/$*.o
 
 out/%.o: %.cpp
 	@mkdir -p `dirname out/$*.o`
-	g++ $(CFLAGS) -c $*.cpp -o out/$*.o
+	g++ $(CPPFLAGS) -c $*.cpp -o out/$*.o
 
 jailm32: $(M32OBJECTS)
-	g++ -m32 $(CFLAGS) $(M32OBJECTS) -o jailm32
+	g++ -m32 $(CPPFLAGS) $(M32OBJECTS) -o jailm32
 
 jail: $(OBJECTS)
-	g++ $(CFLAGS) $(OBJECTS) -o jail
+	g++ $(CPPFLAGS) $(OBJECTS) -o jail
 
 clean:
 	rm -f jail jailm32
