@@ -17,6 +17,8 @@ REGISTER_FLAG(time, 1, rlim_t, TIME_NO_LIMIT,
               "The allowed runtime of the program. Default is no limit.")
 REGISTER_FLAG(mem, 1, rlim_t, MEM_NO_LIMIT,
               "The allowed memory limit of the program. Default is no limit.")
+REGISTER_FLAG(file_limit, 1, rlim_t, FILE_NO_LIMIT,
+              "The allowed file size limit of the program. Default is no limit.")
 REGISTER_FLAG(cwd, 0, string, "", "Working directory of client application. "
               "This is called prior to any root changes.")
 REGISTER_FLAG(local, 0, bool, false,

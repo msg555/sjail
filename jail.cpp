@@ -26,7 +26,7 @@ int syscall_failed(const char* msg) {
 void setlimit(int res, rlim_t softlimit) {
     struct rlimit rl;
     rl.rlim_cur = softlimit;
-    rl.rlim_max = softlimit+softlimit/4;
+    rl.rlim_max = softlimit+softlimit;
     if(setrlimit(res, &rl)) {
         exit(syscall_failed("setrlimit"));
     }
@@ -95,6 +95,9 @@ int main(int argc, char ** argv) {
         if(get_mem() != MEM_NO_LIMIT) {
           setlimit(RLIMIT_AS, get_mem());
         }
+        if(get_file_limit() != FILE_NO_LIMIT){
+          setlimit(RLIMIT_FSIZE, get_file_limit());
+        }
         if(pw_group) {
           if(setgid(pw_group->pw_uid) || setegid(pw_group->pw_uid)) {
             return syscall_failed("Failed to set group id");
@@ -135,7 +138,7 @@ int main(int argc, char ** argv) {
             //       returned true.
             DEBUG("Child terminated with signal " << get_signal_name(WTERMSIG(status)));
             log_term_signal(WTERMSIG(status));
-            finalize_report();
+            finalize_report(resources);
 	    return 0;
         } else if(WIFEXITED(status)) {
             //WIFEXITED(status)
@@ -149,7 +152,7 @@ int main(int argc, char ** argv) {
             //       employed if WIFEXITED returned true.
             DEBUG("Child process exited with status " << WEXITSTATUS(status));
             log_exit_status(WEXITSTATUS(status));
-            finalize_report();
+            finalize_report(resources);
 	    return 0;
         } else if(WIFSTOPPED(status)) {
             //WIFSTOPPED(status)
