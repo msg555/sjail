@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include <regex.h>
 #include <linux/net.h>
+#include <sys/syscall.h>
 
 #include "config.h"
 #include "filterer.h"
@@ -206,10 +207,10 @@ void process_system_call(int pid) {
     case SYS_geteuid32:
     case SYS_getgid32:
     case SYS_getegid32:
-    case SYS_setresuid32: // TODO: evaluate...
-    case SYS_setresgid32: // TODO: evaluate...
-    case SYS_setuid32: // TODO: evaluate...
-    case SYS_setgid32: // TODO: evaluate...
+//    case SYS_setresuid32: // TODO: evaluate...
+//    case SYS_setresgid32: // TODO: evaluate...
+//    case SYS_setuid32: // TODO: evaluate...
+//    case SYS_setgid32: // TODO: evaluate...
     case SYS_sigaction:
     case SYS_mmap2:
     case SYS__llseek:
@@ -260,14 +261,15 @@ void process_system_call(int pid) {
     case SYS_mprotect:
     case SYS_getpid:
     case SYS_time:
-    case SYS_set_tid_address: // TODO: evaluate...
+    case SYS_gettid:
+/*    case SYS_set_tid_address: // TODO: evaluate...
     case SYS_setresuid: // TODO: evaluate...
     case SYS_setresgid: // TODO: evaluate...
     case SYS_setuid: // TODO: evaluate...
     case SYS_setgid: // TODO: evaluate...
-    case SYS_umask: // TODO: evaluate...
+    case SYS_umask: // TODO: evaluate... */
     case SYS_poll: // TODO: evaluate...
-    case SYS_nanosleep:
+//    case SYS_nanosleep:
       break;
 
     case SYS_stat:
@@ -288,6 +290,12 @@ void process_system_call(int pid) {
 
     case SYS_getrlimit:
       break;
+    case SYS_tgkill:
+      // You can kill if the thread is not my thread
+      // and the pid is my pid (so SYS_kill reqs + not my thread)
+      if (param2 == syscall (SYS_gettid)){
+        log_violation("attempted to send " + get_signal_name(param2) + " to my thread id " + convert<string>(param1));
+      }
 
     case SYS_kill:
       // You can't send a signal to anyone else.
