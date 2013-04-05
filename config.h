@@ -6,7 +6,8 @@
 
 using namespace std;
 
-#define DEBUG(x) cerr << x << endl
+//#define DEBUG(x) cerr << x << endl
+#define DEBUG(x)
 
 #define TIME_NO_LIMIT 0
 #define MEM_NO_LIMIT 0
@@ -27,12 +28,12 @@ A convert(const B & x, const A & d = A()) {
 }
 
 // Prints usage information.
-void print_usage();
+void print_usage(const char* argv0);
 
 // Parses the file indicated by file.  Returns true on success.
-bool parse_file(const char * file);
+bool parse_file(const char* file);
 
 // Parses the arguments passed by command line.  Returns -1 on error.
-int parse_arguments(int argc, char ** argv);
+int parse_arguments(int argc, char** argv);
 
 #endif

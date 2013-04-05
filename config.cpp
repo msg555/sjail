@@ -1,6 +1,8 @@
 #include <iostream>
 #include <fstream>
-#include <cstdlib>
+#include <string>
+#include <stdlib.h>
+#include <string.h>
 
 #include "config.h"
 
@@ -13,14 +15,45 @@ using namespace std;
 #include "flags.h"
 #undef REGISTER_FLAG
 
-void print_usage() {
-  cout << "Available flags" << endl;
-  #define REGISTER_FLAG(FLAG_NAME, ALLOW_SHORT, TYPE, DEFAULT, DESCRIPTION) \
-    cout << "    "; \
-    if(ALLOW_SHORT) cout << "-" << * #FLAG_NAME << ' '; \
-    cout << "--" << #FLAG_NAME << "\t: " << DESCRIPTION << endl;
-  #define FLAG_SECTION(SECTION_NAME) \
-    cout << endl << "  " << SECTION_NAME << endl;
+void print_usage(const char* argv0) {
+  printf("Usage: %s [options] prog-and-args\n", argv0);
+  printf("Options:\n");
+
+  size_t max_width = 59;
+  #define REGISTER_FLAG(FLAG_NAME, ALLOW_SHORT, TYPE, DEFAULT, DESCRIPTION)   \
+    do {                                                                      \
+      printf("    ");                                                         \
+      if(ALLOW_SHORT) {                                                       \
+        printf("-%c --%-10s: ", *#FLAG_NAME, #FLAG_NAME);                     \
+      } else {                                                                \
+        printf("--%-13s: ", #FLAG_NAME);                                      \
+      }                                                                       \
+      const char* desc = DESCRIPTION; \
+      const char* desc_end = desc, *i;  \
+      size_t desc_len = strlen(desc); \
+      for(desc_end = desc; *desc_end; desc = desc_end) {  \
+        for(desc_end = desc + max_width, i = desc;  \
+            *i && i != desc + max_width; ++i) { \
+          if(*i == ' ') { \
+            desc_end = i; \
+          } \
+        } \
+        if(!*i) { \
+          desc_end = i; \
+        } \
+        printf("%s\n", string(desc, desc_end - desc).c_str()); \
+        if(*desc_end == ' ') { \
+          ++desc_end; \
+        } \
+        if(*desc_end) { \
+          printf("%s", string(21, ' ').c_str()); \
+        } \
+      } \
+    } while(0);
+  #define FLAG_SECTION(SECTION_NAME)                                          \
+    do {                                                                      \
+      printf("  " SECTION_NAME "\n");                                         \
+    } while(0);
   #include "flags.h"
   #undef FLAG_SECTION
   #undef REGISTER_FLAG

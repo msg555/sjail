@@ -4,7 +4,7 @@
 #include <cstdio>
 
 #include "config.h"
-#include "syscall_tab.h"
+#include "process_state.h"
 
 using namespace std;
 
@@ -14,51 +14,48 @@ bool init_report() {
   return !get_report() || (fout = fopen(get_report_file().c_str(), "w"));
 }
 
-void log_exit_status(int exit_status) {
+void log_exit_status(pid_t pid, int exit_status) {
   if(fout) {
-    fprintf(fout, "exit_status  %d\n", exit_status);
+    fprintf(fout, "[%5d] exit_status  %d\n", pid, exit_status);
     fflush(fout);
   }
 }
 
-void log_term_signal(int term_signal) {
+void log_term_signal(pid_t pid, int term_signal) {
   if(fout) {
-    fprintf(fout, "term_signal  %d\n", term_signal);
+    fprintf(fout, "[%5d] term_signal  %d\n", pid, term_signal);
     fflush(fout);
   }
 }
 
-void log_blocked_syscall(unsigned long sys_num, unsigned long result,
-                         unsigned long param1,  unsigned long param2,
-                         unsigned long param3,  unsigned long param4,
-                         unsigned long param5,  unsigned long param6) {
+void log_blocked_syscall(process_state& st) {
   if(fout) {
-    fprintf(fout, "syscall      %s(%lu,%lu,%lu,%lu,%lu,%lu)\n",
-            get_syscall_name(sys_num).c_str(), param1,
-            param2, param3, param4, param5, param6);
+    fprintf(fout, "[%5d] syscall      %s(%lX,%lX,%lX,%lX,%lX,%lX)\n",
+            st.get_pid(), st.get_syscall_name(st.get_syscall()),
+            st.get_param(0), st.get_param(1), st.get_param(2),
+            st.get_param(3), st.get_param(4), st.get_param(5));
     fflush(fout);
   }
 }
 
 
-void log_violation(const string & message) {
+void log_violation(pid_t pid, const string & message) {
   if(fout) {
-    fprintf(fout, "violation    %s\n", message.c_str());
+    fprintf(fout, "[%5d] violation    %s\n", pid, message.c_str());
     fflush(fout);
   }
 }
 
-void log_error(const string & message) {
+void log_error(pid_t pid, const string & message) {
   if(fout) {
-    fprintf(fout, "error        %s\n", message.c_str());
+    fprintf(fout, "[%5d] error        %s\n", pid, message.c_str());
     fflush(fout);
   }
 }
 
-void log_info(int level, const string & message) {
+void log_info(pid_t pid, int level, const string & message) {
   if(fout && level <= get_log_level()) {
-    fprintf(fout, "log(%d)       %s\n", level, message.c_str());
+    fprintf(fout, "[%5d] log(%d)       %s\n", pid, level, message.c_str());
     fflush(fout);
   }
 }
-
