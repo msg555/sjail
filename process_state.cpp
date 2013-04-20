@@ -120,21 +120,21 @@ process_state::process_state(pid_t pid) : pid(pid), error_state(0), pers(0) {
       return;
   }
 # ifdef X32
-  /* Value of currpers:
+  /* Value of pers:
    *   0: 64 bit
    *   1: 32 bit
    *   2: X32
-   * Value of current_personality:
+   * Transform to:
    *   0: X32
    *   1: 32 bit
    */
-  switch (currpers) {
+  switch (pers) {
     case 0:
       fprintf(stderr, "64-bit mode not supported for x32 jail\n");
       error_state |= 1;
       break;
     case 2:
-      currpers = 0;
+      pers = 0;
       break;
   }
 # endif
@@ -386,4 +386,32 @@ void process_state::save() {
   long res = ptrace(PTRACE_SETREGS, pid, NULL, &x86_64_regs);
 #endif
   error_state |= res != 0;
+}
+
+size_t process_state::word_width() {
+#if defined(I386)
+  return sizeof(param_t);
+#else
+  return pers == 1 ? sizeof(unsigned int) : sizeof(param_t);
+#endif
+}
+
+param_t process_state::read_uword(void* addr) {
+#if defined(I386)
+  return *(param_t*)addr;
+#else
+  return pers == 1 ? *(unsigned int*)addr : *(param_t*)addr;
+#endif
+}
+
+void process_state::write_uword(void* addr, param_t v) {
+#if defined(I386)
+  *(param_t*)addr = v;
+#else
+  if(pers == 1) {
+    *(unsigned int*)addr = (unsigned int)v;
+  } else {
+    *(param_t*)addr = v;
+  }
+#endif
 }

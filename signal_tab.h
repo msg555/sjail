@@ -1,11 +1,9 @@
-#ifndef __SIGNAL_TAB_H
-#define __SIGNAL_TAB_H
+#ifndef JAIL_SIGNAL_TAB_H
+#define JAIL_SIGNAL_TAB_H
 
-#include <iostream>
+#include <string>
 
-using namespace std;
+std::string get_signal_name(int signal);
 
-string get_signal_name(int signal);
-
-#endif
+#endif // JAIL_SIGNAL_TAB_H
 

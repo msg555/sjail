@@ -29,10 +29,6 @@
 
 #include <cstdio>
 
-
-
-using namespace std;
-
 static bool first_call = true;
 
 static filter_action filter_syscall_enter(process_state& st) {
@@ -50,9 +46,10 @@ static filter_action filter_syscall_enter(process_state& st) {
       case FILTER_CHANGED_SYSCALL: save = true; break;
     }
   }
+  block |= !permit;
 
   if(get_report() && get_log_level() >= 5) {
-    log_info(pid, 5, string("syscall ") +
+    log_info(pid, 5, std::string("syscall ") +
               st.get_syscall_name(st.get_syscall()));
   }
 
@@ -123,18 +120,32 @@ filter_action filter_system_call(pid_t pid) {
     return FILTER_KILL_ALL;
   }
 
+  safemem_reset();
+
+  filter_action action;
   proc[pid].enter_call = !proc[pid].enter_call;
   if(proc[pid].enter_call) {
-    return filter_syscall_enter(st);
+    action = filter_syscall_enter(st);
   } else {
-    return filter_syscall_exit(st);
+    action = filter_syscall_exit(st);
   }
+
+  safemem_sync();
+  return action;
 }
 
 std::list<filter*> create_root_filters() {
   std::list<filter*> filters;
   filters.push_back(new memory_filter());
-  filters.push_back(new file_filter());
+  if(!get_files().empty()) {
+    filters.push_back(new file_filter());
+  }
+  if(!get_exec_match().empty()) {
+    filters.push_back(new exec_filter());
+  }
+  if(get_net()) {
+    filters.push_back(new net_filter());
+  }
   filters.push_back(new base_filter());
   return filters;
 }
@@ -170,6 +181,9 @@ filter* filter::ref() {
 
 bool filter::unref() {
   return --refs == 0;
+}
+
+void filter::on_exit(pid_t pid) {
 }
 
 filter* filter::on_clone() {
@@ -214,6 +228,16 @@ filter_action base_filter::filter_syscall_enter(process_state& st) {
     case sys_arch_prctl:
     case sys_set_thread_area:
     case sys_get_thread_area:
+      break;
+
+    case sys_getpid:
+    case sys_getppid:
+    case sys_getuid:
+    case sys_geteuid:
+    case sys_getresuid:
+    case sys_getgid:
+    case sys_getegid:
+    case sys_getresgid:
       break;
 
     default:

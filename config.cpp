@@ -52,7 +52,7 @@ void print_usage(const char* argv0) {
     } while(0);
   #define FLAG_SECTION(SECTION_NAME)                                          \
     do {                                                                      \
-      printf("  " SECTION_NAME "\n");                                         \
+      printf("\n  " SECTION_NAME "\n");                                       \
     } while(0);
   #include "flags.h"
   #undef FLAG_SECTION

@@ -6,20 +6,18 @@
 
 class process_state;
 
-bool initialize_safe_memory();
+bool safemem_init();
 
-bool map_memory_unwritable();
+bool safemem_map_unwritable();
 
-void* read_from_pid(pid_t pid, intptr_t remote_addr, size_t len);
+void* safemem_read_pid(pid_t pid, intptr_t remote_addr, size_t len);
 
-void* read_from_pid_to_null(pid_t pid, intptr_t remote_addr);
+void* safemem_read_pid_to_null(pid_t pid, intptr_t remote_addr);
 
-bool install_safe_memory(pid_t pid, process_state& st);
+intptr_t safemem_remote_addr(pid_t pid, void* local_ptr);
 
-bool install_safe_memory_result(pid_t pid, process_state& st);
+void safemem_reset();
 
-intptr_t proc_safe_memory(pid_t pid, void* local_ptr);
-
-bool safemem_filter_mapcall(process_state& st);
+void safemem_sync();
 
 #endif // JAIL_MEMORY_H

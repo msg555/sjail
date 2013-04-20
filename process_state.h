@@ -44,6 +44,10 @@ class process_state {
   int error();
   void save();
 
+  size_t word_width();
+  param_t read_uword(void* addr);
+  void write_uword(void* addr, param_t v);
+
  private:
   pid_t pid;
   int error_state;

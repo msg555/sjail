@@ -11,45 +11,53 @@
 #include "memory.h"
 #include "report.h"
 
+#include "process_state.h"
+
+using namespace std;
+
+static int regex_init = false;
 static regex_t exec_reg;
 
-bool filter_proc_init() {
-  return get_exec_match().empty() ||
-     !regcomp(&exec_reg, get_exec_match().c_str(), REG_EXTENDED | REG_NOSUB);
+exec_filter::exec_filter() {
 }
 
-bool filter_exec(pid_t pid, user_regs_struct& reg,
-                 unsigned long param1, unsigned long param2,
-                 unsigned long param3) {
-  char* filename = (char*)read_from_pid_to_null(pid, param1);
+exec_filter::~exec_filter() {
+}
 
-  if(!filename) {
-    log_violation(pid, "could not read execve filename");
-    return false;
+filter_action exec_filter::filter_syscall_enter(process_state& st) {
+  if(st.get_syscall() != sys_execve) {
+    return FILTER_NO_ACTION;
   }
 
-  if(get_exec_match().empty()) {
-    log_violation(pid, "execve disabled");
-    return false;
-  } else if(regexec(&exec_reg, filename, 0, NULL, 0)) {
+  pid_t pid = st.get_pid();
+  if(!regex_init) {
+    if(regcomp(&exec_reg, get_exec_match().c_str(),
+               REG_EXTENDED | REG_NOSUB)) {
+      log_violation(pid, "could not compile exec match regex");
+      return FILTER_BLOCK_SYSCALL;
+    }
+    regex_init = true;
+  }
+
+  char* filename = (char*)safemem_read_pid_to_null(pid, st.get_param(0));
+  if(!filename) {
+    log_violation(pid, "could not read exec filename");
+    return FILTER_BLOCK_SYSCALL;
+  }
+
+  if(regexec(&exec_reg, filename, 0, NULL, 0)) {
     log_violation(pid, "invalid execve filename " + string(filename));
-    return false;
+    return FILTER_BLOCK_SYSCALL;
   }
 
   if(!get_passive()) {
-    if(!proc[pid].safe_mem_base) {
-      log_violation(pid, "cannot allow execve without safe mem installed");
-      return false;
+    intptr_t rem_addr = safemem_remote_addr(pid, filename);
+    if(!rem_addr) {
+      log_violation(pid, "cannot allow file op without safe mem installed");
+      return FILTER_BLOCK_SYSCALL;
     }
-
-    #ifdef __x86_64__
-    reg.rdi = (unsigned long)proc_safe_memory(pid, filename);
-    #endif
-    #ifdef __i386__
-    reg.ebx = (long)proc_safe_memory(pid, filename);
-    #endif
-    ptrace(PTRACE_SETREGS, pid, NULL, &reg);
+    st.set_param(0, rem_addr);
   }
 
-  return true;
+  return FILTER_PERMIT_SYSCALL;
 }

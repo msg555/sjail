@@ -48,19 +48,31 @@ int teardown_processes(const char* msg) {
   return 1;
 }
 
-int main(int argc, char ** argv) {
-/*
-  printf("%d\n", (int)getuid());
-  return 0;
-*/
+bool cleanup_process(pid_t pid, size_t& trace_count) {
+  proc[pid].tracing_proc = false;
+  proc[pid].enter_call = false;
+  for(; !proc[pid].filters.empty(); ) {
+    filter* fltr = *proc[pid].filters.begin();
+    proc[pid].filters.erase(proc[pid].filters.begin());
 
+    if(fltr->unref()) {
+      fltr->on_exit(pid);
+      delete fltr;
+    }
+  }
+  return --trace_count == 0;
+}
+
+int main(int argc, char ** argv) {
   int res = parse_arguments(argc, argv);
   if(res == -1 || res == argc) {
     print_usage(argv[0]);
     return -1;
   }
 
-  parse_file(get_conf_file().c_str());
+  if(!get_no_conf()) {
+    parse_file(get_conf_file().c_str());
+  }
   parse_arguments(argc, argv);
   if(get_help()) {
     print_usage(argv[0]);
@@ -68,7 +80,7 @@ int main(int argc, char ** argv) {
   }
 
   init_process_state();
-  if(!initialize_safe_memory()) {
+  if(!safemem_init()) {
     return syscall_failed("failed to init memory");
   }
 
@@ -77,7 +89,7 @@ int main(int argc, char ** argv) {
     cerr << "Fork failed" << endl;
     return 1;
   } else if(pid_root == 0) {
-    if(!map_memory_unwritable()) {
+    if(!safemem_map_unwritable()) {
       return syscall_failed("failed to map memory");
     }
 
@@ -104,9 +116,6 @@ int main(int argc, char ** argv) {
     if(get_time() != TIME_NO_LIMIT) {
       setlimit(RLIMIT_CPU, get_time());
     }
-    if(get_mem() != MEM_NO_LIMIT) {
-      setlimit(RLIMIT_AS, get_mem());
-    }
 
     struct passwd* pw_user = NULL;
     struct passwd* pw_group = NULL;
@@ -124,12 +133,12 @@ int main(int argc, char ** argv) {
     }
 
     if(pw_group) {
-      if(setgid(pw_group->pw_uid) || setegid(pw_group->pw_uid)) {
+      if(setresgid(pw_group->pw_uid, pw_group->pw_uid, pw_group->pw_uid)) {
         return syscall_failed("Failed to set group id");
       }
     }
     if(pw_user) {
-      if(setuid(pw_user->pw_uid) || seteuid(pw_user->pw_uid)) {
+      if(setresuid(pw_user->pw_uid, pw_user->pw_uid, pw_user->pw_uid)) {
         return syscall_failed("Failed to set user id");
       }
     }
@@ -172,16 +181,12 @@ int main(int argc, char ** argv) {
 
     if(WIFSIGNALED(status)) {
       log_term_signal(pid, WTERMSIG(status));
-      proc[pid].tracing_proc = false;
-      proc[pid].enter_call = false;
-      if(--trace_count == 0) {
+      if(cleanup_process(pid, trace_count)) {
         return 0;
       }
     } else if(WIFEXITED(status)) {
       log_exit_status(pid, WEXITSTATUS(status));
-      proc[pid].tracing_proc = false;
-      proc[pid].enter_call = false;
-      if(--trace_count == 0) {
+      if(cleanup_process(pid, trace_count)) {
         return 0;
       }
     } else if(WIFSTOPPED(status)) {
@@ -236,20 +241,22 @@ int main(int argc, char ** argv) {
               if(kill(pid, SIGKILL)) {
                 syscall_failed("kill");
                 return teardown_processes(NULL);
+              } else if(cleanup_process(pid, trace_count)) {
+                return 0;
               }
               break;
             case FILTER_KILL_ALL:
               return teardown_processes(NULL);
               break;
             default:
+              errno = 0;
+              ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
               break;
           }
         } catch(std::bad_alloc) {
           log_error(pid, "out of state space");
           return teardown_processes("out of memory");
         }
-        errno = 0;
-        ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
       } else {
         errno = 0;
         ptrace(PTRACE_CONT, pid, NULL, (void*)(intptr_t)sig);

@@ -15,28 +15,28 @@
 
 #include <stdio.h>
 
-bool is_file_allowed(pid_t pid, string file) {
-  string s = get_files();
+static int regex_init = false;
+static regex_t file_reg;
+
+bool is_file_allowed(pid_t pid, std::string file) {
   if(get_log_level() >= 4) {
     log_info(pid, 4, "open file " + file);
   }
-  if(s != "") {
-    regex_t r;
-    if(regcomp(&r, s.c_str(), REG_EXTENDED | REG_NOSUB)) {
+  if(!regex_init) {
+    if(regcomp(&file_reg, get_files().c_str(), REG_EXTENDED | REG_NOSUB)) {
       log_violation(pid, "failed to compile file regexp");
-    } else if(!regexec(&r, file.c_str(), (size_t)0, NULL, 0)) {
-      regfree(&r);
-      return true;
+      return false;
     }
+    regex_init = true;
   }
-  return false;
+  return regexec(&file_reg, file.c_str(), (size_t)0, NULL, 0) == 0;
 }
 
 bool filter_param_access(process_state& st, size_t idx, int mode, bool log) {
   pid_t pid = st.get_pid();
   char fullpath[PATH_MAX];
 
-  char* file = (char*)read_from_pid_to_null(pid, st.get_param(idx));
+  char* file = (char*)safemem_read_pid_to_null(pid, st.get_param(idx));
   if(!file) {
     if(log) log_violation(pid, "could not read path");
     return true;
@@ -44,13 +44,14 @@ bool filter_param_access(process_state& st, size_t idx, int mode, bool log) {
 
   char* ret = realpath(file, fullpath);
   if(ret != fullpath && get_rdonly()) {
-    if(log) log_violation(pid, "could not find file " + string(file));
+    if(log) log_violation(pid, "could not find file " + std::string(file));
     return true;
   }
 
-  if(!is_file_allowed(pid, string(fullpath))) {
+  if(!is_file_allowed(pid, std::string(fullpath))) {
     if(log) {
-      log_violation(pid, "Attempt to access restricted file " + string(file));
+      log_violation(pid, "Attempt to access restricted file " +
+                         std::string(file));
     }
     return true;
   }
@@ -61,7 +62,7 @@ bool filter_param_access(process_state& st, size_t idx, int mode, bool log) {
   }
 
   if(!get_passive()) {
-    intptr_t rem_addr = proc_safe_memory(pid, file);
+    intptr_t rem_addr = safemem_remote_addr(pid, file);
     if(!rem_addr) {
       log_violation(pid, "cannot allow file op without safe mem installed");
       return true;
@@ -93,6 +94,18 @@ filter_action file_filter::filter_syscall_enter(process_state& st) {
     case sys_fstat64:
       break; /* Takes a file descriptor. */
 
+    /* Standard polling functionality */
+    case sys_poll:
+    case sys_ppoll:
+    case sys_select:
+    case sys_pselect6:
+    case sys_epoll_create:
+    case sys_epoll_create1:
+    case sys_epoll_ctl:
+    case sys_epoll_wait:
+    case sys_epoll_pwait:
+      break;
+
     /* Probably too esoteric to be worth thinking about. */
     /* case sys_lstat: break; */
 
@@ -103,6 +116,9 @@ filter_action file_filter::filter_syscall_enter(process_state& st) {
       if(flags == O_WRONLY || flags == O_RDWR) mode |= W_OK;
       block = filter_param_access(st, 0, mode, true);
     } break;
+
+    default:
+      return FILTER_NO_ACTION;
   }
   return block ? FILTER_BLOCK_SYSCALL : FILTER_PERMIT_SYSCALL;
 }

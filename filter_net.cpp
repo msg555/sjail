@@ -1,11 +1,3 @@
-#if 0
-#include <iostream>
-#include <map>
-#include <stdlib.h>
-#include <sys/ptrace.h>
-#include <sys/user.h>
-#include <errno.h>
-#include <signal.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
@@ -13,285 +5,310 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
+
+#include <string>
+
 #include <regex.h>
-#include <linux/net.h>
-#include <linux/netlink.h>
-#include <sys/syscall.h>
 
 #include "config.h"
 #include "filter.h"
-#include "syscall_tab.h"
-#include "signal_tab.h"
-#include "report.h"
 #include "memory.h"
+#include "report.h"
+#include "process_state.h"
 
-#ifdef SYS_socketcall
-#define SYS_socket SYS_SOCKET
-#define SYS_socketpair SYS_SOCKETPAIR
-#define SYS_connect SYS_CONNECT
-#define SYS_bind SYS_BIND
-#define SYS_listen SYS_LISTEN
-#define SYS_accept SYS_ACCEPT
-#define SYS_getsockname SYS_GETSOCKNAME
-#define SYS_getpeername SYS_GETPEERNAME
-#define SYS_sendto SYS_SENDTO
-#define SYS_sendmsg SYS_SENDMSG
-#define SYS_recvfrom SYS_RECVFROM
-#define SYS_recvmsg SYS_RECVMSG
-#define SYS_shutdown SYS_SHUTDOWN
-#define SYS_getsockopt SYS_GETSOCKOPT
-#define SYS_setsockopt SYS_SETSOCKOPT
-#endif
+#define SOCKOP_socket 1
+#define SOCKOP_bind 2
+#define SOCKOP_connect 3
+#define SOCKOP_listen 4
+#define SOCKOP_accept 5
+#define SOCKOP_getsockname 6
+#define SOCKOP_getpeername 7
+#define SOCKOP_socketpair 8
+#define SOCKOP_send 9
+#define SOCKOP_recv 10
+#define SOCKOP_sendto 11
+#define SOCKOP_recvfrom 12
+#define SOCKOP_shutdown 13
+#define SOCKOP_setsockopt 14
+#define SOCKOP_getsockopt 15
+#define SOCKOP_sendmsg 16
+#define SOCKOP_recvmsg 17
+#define SOCKOP_accept4 18
+#define SOCKOP_recvmmsg 19
+#define SOCKOP_sendmmsg 20
 
-map<int, unsigned long> sock_map;
+#define SOCK_TYPE_MASK 0xF
 
-bool read_from_pid_compat(pid_t pid, char* dst,
-                          intptr_t remote_addr, size_t len) {
-  void* addr = read_from_pid(pid, remote_addr, len);
-  if(!addr) {
+static int regex_init = false;
+static regex_t net_reg;
+
+static bool remote_client_allowed(pid_t pid, param_t* args) {
+  param_t addr = args[0];
+  param_t addr_sz = args[1];
+  if(addr == 0) {
+    return true;
+  } else if(addr_sz < sizeof(sa_family_t)) {
+    log_violation(pid, "address too small");
     return false;
   }
-  memcpy(dst, addr, len);
-  return true;
-}
 
-bool remote_client_allowed(pid_t pid, unsigned long addr, unsigned long addr_sz,
-                           const string& log_prefix) {
-  string rem_addr;
   char buf[INET6_ADDRSTRLEN];
-  sa_family_t family;
-
-  if(!read_from_pid_compat(pid, (char *)&family, addr, sizeof(family))) {
+  void* vaddr = safemem_read_pid(pid, addr, addr_sz);
+  if(!vaddr) {
     log_violation(pid, "unreadable remote address family");
     return false;
   }
+
+  std::string rem_addr;
+  sa_family_t family = *(sa_family_t*)vaddr;
   switch(family) {
     case AF_INET:
     case AF_INET6: {
       switch(addr_sz) {
         case sizeof(sockaddr_in): {
-          sockaddr_in sin;
-          if(!read_from_pid_compat(pid, (char *)&sin, addr, sizeof(sin))) {
-            log_violation(pid, "unreadable remote address struct");
-            return false;
-          }
-          if(!inet_ntop(family, &sin.sin_addr, buf, sizeof(buf))) {
+          sockaddr_in* sin = (sockaddr_in*)vaddr;
+          if(!inet_ntop(family, &sin->sin_addr, buf, sizeof(buf))) {
             log_violation(pid, "could not convert network "
                           "address to presentation form");
             return false;
           }
-          rem_addr = string(buf) + ";" + convert<string>(ntohs(sin.sin_port));
+          rem_addr = std::string(buf) + ";" +
+                        convert<std::string>(ntohs(sin->sin_port));
           break;
         } case sizeof(sockaddr_in6): {
-          sockaddr_in6 sin;
-          if(!read_from_pid_compat(pid, (char *)&sin, addr, sizeof(sin))) {
-            log_violation(pid, "unreadable remote address struct");
+          sockaddr_in6* sin = (sockaddr_in6*)vaddr;
+          if(!inet_ntop(family, &sin->sin6_addr, buf, sizeof(buf))) {
+            log_violation(pid, "could not convert network "
+                          "address to presentation form");
             return false;
           }
-          inet_ntop(family, &sin.sin6_addr, buf, sizeof(buf));
-          rem_addr = string(buf) + ";" + convert<string>(ntohs(sin.sin6_port));
+          rem_addr = std::string(buf) + ";" +
+                        convert<std::string>(ntohs(sin->sin6_port));
           break;
         } default: {  
-          log_violation(pid, "unexpected remote address structk size");
+          log_violation(pid, "unexpected remote address struct size");
           return false;
         }
       }
       rem_addr += family == AF_INET ? ";INET" : ";INET6";
       break;
     } case AF_UNIX: {
-      sockaddr_un sin;
-      if(sizeof(sin) > addr_sz) {
+      if(sizeof(sockaddr_un) > addr_sz) {
         log_violation(pid, "unexpected remote address struct size");
         return false;
       }
-      if(!read_from_pid_compat(pid, (char *)&sin, addr, sizeof(sin))) {
-        log_violation(pid, "unreadable remote address struct");
-        return false;
+      
+      sockaddr_un* sin = (sockaddr_un*)vaddr;
+      for(size_t i = 0; ; i++) {
+        if(i == sizeof(sin->sun_path) || sin->sun_path[i] == ';') {
+          log_violation(pid, "unix path malformed");
+          return false;
+        }
+        if(!sin->sun_path[i]) {
+          break;
+        }
       }
-      rem_addr = string(sin.sun_path) + ";0;UNIX";
+      rem_addr = std::string(sin->sun_path) + ";0;UNIX";
       break;
     } default: {
-      log_violation(pid, "unsupported remote address struct family " +
-                    convert<string>(family));
+      log_violation(pid, "unsupported remote address family");
       return false;
     }
   }
 
-  if(!get_net_regexp().empty()) {
-    regex_t re;
-    if(regcomp(&re, get_net_regexp().c_str(), REG_EXTENDED | REG_NOSUB)) {
+  if(!regex_init && !get_net_regexp().empty()) {
+    if(regcomp(&net_reg, get_net_regexp().c_str(), REG_EXTENDED | REG_NOSUB)) {
       log_violation(pid, "failed to compile net regexp");
       return false;
     }
-    int status = regexec(&re, rem_addr.c_str(), (size_t)0, NULL, 0);
-    regfree(&re);
-    if(status) {
-      log_violation(pid, string("attempted to communicate with ") + rem_addr);
-      return false;
-    }
+    regex_init = true;
   }
 
-  log_info(pid, 1, log_prefix + rem_addr);
-  return true;
-}
-
-bool process_network_call(pid_t pid, int call_num,
-                          unsigned long socket_param[6]) {
-  if(!get_net()) {
-    log_violation(pid, "socket call");
+  if(!regex_init || regexec(&net_reg, rem_addr.c_str(), (size_t)0, NULL, 0)) {
+    log_violation(pid, std::string("attempted to communicate with ") +
+                       rem_addr);
     return false;
   }
-  switch(call_num) {
-    case SYS_socket:
-    case SYS_socketpair:
-      #ifdef SYS_socketcall
-      if(!read_from_pid_compat(pid, (char *)socket_param, socket_param[1],
-                        sizeof(unsigned long) * 3)) {
-        log_violation(pid, "unreadable parameters to socket/socketpair");
-        return false;
-      }
-      #endif
-      if(socket_param[0] != PF_INET && socket_param[0] != PF_INET6 &&
-        socket_param[0] != PF_LOCAL) {
-        log_violation(pid, "unsupported domain used " +
-                      convert<string>(socket_param[0]));
-        return false;
-      }
-      if(socket_param[1] != SOCK_STREAM && socket_param[1] != SOCK_DGRAM) {
-        log_violation(pid, "protocol other than tcp or udp used");
-        return false;
-      }
-      if(socket_param[1] == SOCK_STREAM && !get_tcp()) {
-        log_violation(pid, "tcp used");
-        return false;
-      }
-      if(socket_param[1] == SOCK_DGRAM && !get_udp()) {
-        log_violation(pid, "udp used");
-        return false;
-      }
-      break;
-        
-    case SYS_connect: {
-      #ifdef SYS_socketcall
-      if(!read_from_pid_compat(pid, (char *)socket_param,
-                        socket_param[1], sizeof(unsigned long) * 3)) {
-        log_violation(pid, "unreadable parameters to connect");
-        return false;
-      }
-      #endif
-      if(!remote_client_allowed(pid, socket_param[1], socket_param[2],
-                                "socket connect to ")) {
-        return false; /* The violation is logged by remote_client_allowed. */
-      }
-      break;
-    }
 
-    case SYS_bind:
-    case SYS_listen:
-    case SYS_accept:
-      if(!get_listen()) {            
-        log_violation(pid, "attempted to bind/listen/accept");
-        return false;
-      }
-      break;
-
-    #ifdef SYS_socketcall
-    case SYS_SEND:
-    case SYS_RECV:
-      break;
-    #endif
-
-    case SYS_sendto:
-      if(!get_tcp() || get_udp() && sock_map[socket_param[0]] == SOCK_DGRAM) {
-        // We need to verify the remote address.
-        #ifdef SYS_socketcall
-        if(!read_from_pid_compat(pid, (char *)socket_param, socket_param[1],
-                          sizeof(unsigned long) * 6)) {
-          log_violation(pid, "unreadable parameters to sendto");
-          return false;
-        }
-        #endif
-        if(!remote_client_allowed(pid, socket_param[4], socket_param[5],
-                                  "socket send to ")) {
-          return false; /* The violation is logged by remote_client_allowed. */
-        }
-      }
-      break;
-    case SYS_recvfrom:
-      if(!get_tcp() || get_udp() && sock_map[socket_param[0]] == SOCK_DGRAM) {
-        /* We need to verify the remote address. */
-        #ifdef SYS_socketcall
-        if(!read_from_pid_compat(pid, (char *)socket_param, socket_param[1],
-                          sizeof(unsigned long) * 6)) {
-          log_violation(pid, "unreadable parameters to recvfrom");
-          return false;
-        }
-        #endif
-        if(!remote_client_allowed(pid, socket_param[4], socket_param[5],
-                                  "socket recv from ")) {
-          return false; /* The violation is logged by remote_client_allowed. */
-        }
-      }
-      break;
-
-    case SYS_getsockname:
-    case SYS_getpeername:
-    case SYS_sendmsg:
-    case SYS_recvmsg:
-    case SYS_shutdown: 
-    case SYS_getsockopt:
-      break;
-
-    case SYS_setsockopt:
-      // There are some options that shouldn't be allowed.  There are lots
-      // of options available to be changed and it's difficult to discern
-      // which ones are and aren't ok so I've disabled them all.
-      log_violation(pid, "setsockopt used");
-
-    default:
-      log_violation(pid, "unknown socket call made");
+  if(!get_passive()) {
+    intptr_t rem_addr = safemem_remote_addr(pid, vaddr);
+    if(!rem_addr) {
+      log_violation(pid, "cannot allow net op without safe mem installed");
       return false;
+    }
+    args[0] = rem_addr;
   }
+
+  log_info(pid, 1, "net address ok: " + rem_addr);
   return true;
 }
 
-
-void process_network_exit(pid_t pid, int call_num, unsigned long result,
-                          unsigned long socket_param[6]) {
-  // TODO(msg): get this working correctly.  Fails to read parameters?
-  return;
-  switch(call_num) {
-    case SYS_socket:
-      #ifdef SYS_socketcall
-      if(read_from_pid_compat(pid, (char *)socket_param, socket_param[1],
-                       sizeof(unsigned long) * 2)) {
-        log_info(pid, 2, "failed to read socket parameters on exit");
-        return;
-      }
-      #endif
-      if(result != -1) {
-        sock_map[result] = socket_param[1];
-      }
-      break;
-    case SYS_socketpair:
-      #ifdef SYS_socketcall
-      if(read_from_pid_compat(pid, (char *)socket_param, socket_param[1],
-                       sizeof(unsigned long) * 3)) {
-        log_info(pid, 2, "failed to read socketpair parameters on exit");
-        return;
-      }
-      #endif
-      if(result != -1) {
-        sock_map[result] = socket_param[1];
-        // TODO(msg): make sure this is how this really works...
-        if(result != -1) {
-          int ss[2];
-          read_from_pid_compat(pid, (char *)ss, socket_param[3], sizeof(ss));
-          sock_map[ss[0]] = sock_map[ss[1]] = socket_param[1];
-        }
-      }
-      break;
-  }
+net_filter::net_filter() {
 }
 
+net_filter::~net_filter() {
+}
+
+filter_action net_filter::filter_syscall_enter(process_state& st) {
+  int op;
+  bool generic_call = false;
+  pid_t pid = st.get_pid();
+  switch(st.get_syscall()) {
+    case sys_socketcall:
+      generic_call = true;
+      op = st.get_param(0);
+      break;
+
+#define DOCASE(x) case sys_ ## x: op = SOCKOP_ ## x; break
+    DOCASE(socket);
+    DOCASE(bind);
+    DOCASE(connect);
+    DOCASE(listen);
+    DOCASE(accept);
+    DOCASE(getsockname);
+    DOCASE(getpeername);
+    DOCASE(socketpair);
+    DOCASE(send);
+    DOCASE(recv);
+    DOCASE(sendto);
+    DOCASE(recvfrom);
+    DOCASE(shutdown);
+    DOCASE(setsockopt);
+    DOCASE(getsockopt);
+    DOCASE(sendmsg);
+    DOCASE(recvmsg);
+    DOCASE(accept4);
+    DOCASE(recvmmsg);
+    DOCASE(sendmmsg);
+#undef DOCASE
+
+    default:
+      return FILTER_NO_ACTION;
+  }
+
+  /* Quickly filter out always yes/no syscalls. */
+  size_t nargs = 0;
+  size_t addr_pos = 6;
+  switch(op) {
+    case SOCKOP_bind:
+    case SOCKOP_listen:
+    case SOCKOP_accept:
+    case SOCKOP_accept4:
+      return get_listen() ? FILTER_PERMIT_SYSCALL : FILTER_BLOCK_SYSCALL;
+
+    case SOCKOP_getsockname:
+    case SOCKOP_getpeername:
+    case SOCKOP_shutdown: 
+      return FILTER_PERMIT_SYSCALL;
+
+    /* Need to vet the remote address by peering into msg to support this. */
+    case SOCKOP_sendmsg:
+    case SOCKOP_recvmsg:
+    case SOCKOP_sendmmsg:
+    case SOCKOP_recvmmsg:
+      return FILTER_BLOCK_SYSCALL;
+
+    /* We probably can support some options by I'm not comfortable white listing
+     * this method entirely. */
+    case SOCKOP_setsockopt:
+      return FILTER_BLOCK_SYSCALL;
+
+    case SOCKOP_getsockopt:
+      return FILTER_PERMIT_SYSCALL;
+
+    /* We only vet the remote address.  To use these you must have already
+     * successfully set one up. */
+    case SOCKOP_send:
+    case SOCKOP_recv:
+    case SOCKOP_recvfrom:
+      return FILTER_PERMIT_SYSCALL;
+      
+    /* We need to load and sanitize the arguments before we vet. */
+    case SOCKOP_socket: nargs = 3; break;
+    case SOCKOP_socketpair: nargs = 4; break;
+    case SOCKOP_connect: nargs = 3; addr_pos = 1; break;
+    case SOCKOP_sendto: nargs = 6; addr_pos = 4; break;
+
+    default:
+      log_violation(pid, "unknown socket operation");
+      return FILTER_BLOCK_SYSCALL;
+  }
+
+  /* Read in parameters wherever they come from. */
+  void* params = NULL;
+  param_t s_params[6];
+  if(generic_call) {
+    size_t width = st.word_width();
+    params = safemem_read_pid(pid, st.get_param(1), nargs * width);
+    if(!params) {
+      log_violation(pid, "could not read socketcall parameters");
+      return FILTER_BLOCK_SYSCALL;
+    }
+
+    for(size_t i = 0; i < nargs; i++) {
+      s_params[i] = st.read_uword((char*)params + i * width);
+    }
+  } else {
+    for(size_t i = 0; i < nargs; i++) {
+      s_params[i] = st.get_param(i);
+    }
+  }
+
+  if(addr_pos < nargs &&
+     !remote_client_allowed(pid, s_params + addr_pos)) {
+    return FILTER_BLOCK_SYSCALL;
+  }
+
+  switch(op) {
+    case SOCKOP_socket:
+    case SOCKOP_socketpair: {
+      if(s_params[0] != PF_INET && s_params[0] != PF_INET6 &&
+         s_params[0] != PF_UNIX) {
+        log_violation(pid, "unsupported socket domain used");
+        return FILTER_BLOCK_SYSCALL;
+      }
+      param_t sock_type = s_params[1];
+#ifdef SOCK_TYPE_MASK
+      sock_type &= SOCK_TYPE_MASK;
 #endif
+      if(sock_type != SOCK_STREAM && sock_type != SOCK_DGRAM) {
+        log_violation(pid, "protocol other than tcp or udp used");
+        return FILTER_BLOCK_SYSCALL;
+      }
+      if(s_params[1] == SOCK_STREAM && !get_tcp()) {
+        log_violation(pid, "tcp used");
+        return FILTER_BLOCK_SYSCALL;
+      }
+      if(s_params[1] == SOCK_DGRAM && !get_udp()) {
+        log_violation(pid, "udp used");
+        return FILTER_BLOCK_SYSCALL;
+      }
+    } break;
+
+    /* Their parameters are vetted earlier. */
+    case SOCKOP_connect:
+    case SOCKOP_sendto:
+      break;
+
+    default:
+      log_violation(pid, "internal error");
+      return FILTER_BLOCK_SYSCALL;
+  }
+
+  /* If socketcall was used the parameters are held in the client address space
+   * and we need to move them to a safe location. */
+  if(generic_call && !get_passive()) {
+    size_t width = st.word_width();
+    for(size_t i = 0; i < nargs; i++) {
+      st.write_uword((char*)params + i * width, s_params[i]);
+    }
+
+    intptr_t rem_addr = safemem_remote_addr(pid, params);
+    if(!rem_addr) {
+      log_violation(pid, "cannot allow socketcall without safe mem installed");
+      return FILTER_BLOCK_SYSCALL;
+    }
+    st.set_param(1, rem_addr);
+  }
+  return FILTER_PERMIT_SYSCALL;
+}

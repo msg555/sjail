@@ -4,8 +4,6 @@
 #include <iostream>
 #include <sstream>
 
-using namespace std;
-
 //#define DEBUG(x) cerr << x << endl
 #define DEBUG(x)
 
@@ -20,7 +18,7 @@ using namespace std;
 
 template<class A, class B>
 A convert(const B & x, const A & d = A()) {
-	stringstream ss;
+	std::stringstream ss;
 	ss << x;
 	A r = d;
 	ss >> r;
