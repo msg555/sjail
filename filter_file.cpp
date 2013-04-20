@@ -62,7 +62,7 @@ bool filter_param_access(process_state& st, size_t idx, int mode, bool log) {
   }
 
   if(!get_passive()) {
-    intptr_t rem_addr = safemem_remote_addr(pid, file);
+    uintptr_t rem_addr = safemem_remote_addr(pid, file);
     if(!rem_addr) {
       log_violation(pid, "cannot allow file op without safe mem installed");
       return true;

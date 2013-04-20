@@ -131,7 +131,7 @@ static bool remote_client_allowed(pid_t pid, param_t* args) {
   }
 
   if(!get_passive()) {
-    intptr_t rem_addr = safemem_remote_addr(pid, vaddr);
+    uintptr_t rem_addr = safemem_remote_addr(pid, vaddr);
     if(!rem_addr) {
       log_violation(pid, "cannot allow net op without safe mem installed");
       return false;
@@ -303,7 +303,7 @@ filter_action net_filter::filter_syscall_enter(process_state& st) {
       st.write_uword((char*)params + i * width, s_params[i]);
     }
 
-    intptr_t rem_addr = safemem_remote_addr(pid, params);
+    uintptr_t rem_addr = safemem_remote_addr(pid, params);
     if(!rem_addr) {
       log_violation(pid, "cannot allow socketcall without safe mem installed");
       return FILTER_BLOCK_SYSCALL;

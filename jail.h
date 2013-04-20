@@ -14,7 +14,7 @@ typedef struct pid_data {
   bool enter_call;
 
   bool installing_safe_mem;
-  intptr_t safe_mem_base;
+  uintptr_t safe_mem_base;
   process_state* restore_state;
   std::list<filter*> filters;
 } pid_data;

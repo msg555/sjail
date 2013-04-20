@@ -3,7 +3,7 @@
 
 #include <string>
 
-std::string get_signal_name(int signal);
+std::string get_signal_name(int signum);
 
 #endif // JAIL_SIGNAL_TAB_H
 

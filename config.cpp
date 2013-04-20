@@ -28,27 +28,26 @@ void print_usage(const char* argv0) {
       } else {                                                                \
         printf("--%-13s: ", #FLAG_NAME);                                      \
       }                                                                       \
-      const char* desc = DESCRIPTION; \
-      const char* desc_end = desc, *i;  \
-      size_t desc_len = strlen(desc); \
-      for(desc_end = desc; *desc_end; desc = desc_end) {  \
-        for(desc_end = desc + max_width, i = desc;  \
-            *i && i != desc + max_width; ++i) { \
-          if(*i == ' ') { \
-            desc_end = i; \
-          } \
-        } \
-        if(!*i) { \
-          desc_end = i; \
-        } \
-        printf("%s\n", string(desc, desc_end - desc).c_str()); \
-        if(*desc_end == ' ') { \
-          ++desc_end; \
-        } \
-        if(*desc_end) { \
-          printf("%s", string(21, ' ').c_str()); \
-        } \
-      } \
+      const char* desc = DESCRIPTION;                                         \
+      const char* desc_end = desc, *i;                                        \
+      for(desc_end = desc; *desc_end; desc = desc_end) {                      \
+        for(desc_end = desc + max_width, i = desc;                            \
+            *i && i != desc + max_width; ++i) {                               \
+          if(*i == ' ') {                                                     \
+            desc_end = i;                                                     \
+          }                                                                   \
+        }                                                                     \
+        if(!*i) {                                                             \
+          desc_end = i;                                                       \
+        }                                                                     \
+        printf("%s\n", string(desc, desc_end - desc).c_str());                \
+        if(*desc_end == ' ') {                                                \
+          ++desc_end;                                                         \
+        }                                                                     \
+        if(*desc_end) {                                                       \
+          printf("%s", string(21, ' ').c_str());                              \
+        }                                                                     \
+      }                                                                       \
     } while(0);
   #define FLAG_SECTION(SECTION_NAME)                                          \
     do {                                                                      \

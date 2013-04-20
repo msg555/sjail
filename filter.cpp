@@ -44,6 +44,7 @@ static filter_action filter_syscall_enter(process_state& st) {
       case FILTER_BLOCK_SYSCALL: save = block = true; break;
       case FILTER_PERMIT_SYSCALL: permit = true; break;
       case FILTER_CHANGED_SYSCALL: save = true; break;
+      default: break;
     }
   }
   block |= !permit;
@@ -73,13 +74,12 @@ static filter_action filter_syscall_enter(process_state& st) {
 
 static filter_action filter_syscall_exit(process_state& st) {
   pid_t pid = st.get_pid();
-  SYSCALL sys = st.get_syscall();
-
   for(std::list<filter*>::iterator it = proc[pid].filters.begin();
       it != proc[pid].filters.end(); it++) {
     switch((*it)->filter_syscall_exit(st)) {
       case FILTER_KILL_PID: return FILTER_KILL_PID;
       case FILTER_KILL_ALL: return FILTER_KILL_ALL;
+      default: break;
     }
   }
 

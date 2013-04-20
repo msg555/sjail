@@ -51,7 +51,7 @@ filter_action exec_filter::filter_syscall_enter(process_state& st) {
   }
 
   if(!get_passive()) {
-    intptr_t rem_addr = safemem_remote_addr(pid, filename);
+    uintptr_t rem_addr = safemem_remote_addr(pid, filename);
     if(!rem_addr) {
       log_violation(pid, "cannot allow file op without safe mem installed");
       return FILTER_BLOCK_SYSCALL;

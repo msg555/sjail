@@ -1,10 +1,8 @@
-#include <iostream>
+#include <string>
 
 #include "signal_tab.h"
 
-using namespace std;
-
-const char * signal_tab [] = {
+const char* signal_tab [] = {
 	"SIG_0",	/* 0 */
 	"SIGHUP",	/* 1 */
 	"SIGINT",	/* 2 */
@@ -40,11 +38,9 @@ const char * signal_tab [] = {
 	"SIGRTMIN",	/* 32 */
 };
 
-string get_signal_name(int signal) {
-  if(signal < 0 || signal >= sizeof(signal_tab) / sizeof(char *)) {
+std::string get_signal_name(int signum) {
+  if((size_t)signum >= sizeof(signal_tab) / sizeof(char *)) {
     return "SIGUNKNOWN";
   }
-  return signal_tab[signal];
+  return signal_tab[signum];
 }
-
-

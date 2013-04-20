@@ -236,18 +236,18 @@ void process_state::set_syscall(enum SYSCALL sys) {
 
 const char* process_state::get_syscall_name(SYSCALL sys) {
   if(pers == 0) {
-    if(scno_tab0[sys] != -1) {
+    if(scno_tab0[sys] != (unsigned long)-1) {
       return sysent0[scno_tab0[sys]].sys_name;
     }
 #ifdef HAVE_SYSENT1
   } else if(pers == 1) {
-    if(scno_tab1[sys] != -1) {
+    if(scno_tab1[sys] != (unsigned long)-1) {
       return sysent1[scno_tab1[sys]].sys_name;
     }
 #endif
 #ifdef HAVE_SYSENT2
   } else if(pers == 2) {
-    if(scno_tab2[sys] != -1) {
+    if(scno_tab2[sys] != (unsigned long)-1) {
       return sysent2[scno_tab2[sys]].sys_name;
     }
 #endif

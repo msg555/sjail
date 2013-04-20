@@ -60,7 +60,7 @@ bool safemem_map_unwritable() {
   return true;
 }
 
-void* safemem_read_pid(pid_t pid, intptr_t remote_addr, size_t len) {
+void* safemem_read_pid(pid_t pid, uintptr_t remote_addr, size_t len) {
   size_t max_size = (char*)base_addr + MAPPING_SIZE - (char*)addr;
   if(len > max_size) {
     return NULL;
@@ -68,8 +68,8 @@ void* safemem_read_pid(pid_t pid, intptr_t remote_addr, size_t len) {
 
   char* wptr = (char*)addr;
   for(size_t i = 0; i < len; ) {
-    intptr_t a = (remote_addr + i) & (sizeof(long) - 1);
-    intptr_t b = std::min(sizeof(long), a + len - i);
+    uintptr_t a = (remote_addr + i) & (sizeof(long) - 1);
+    uintptr_t b = std::min(sizeof(long), a + len - i);
 
     errno = 0;
     long v = ptrace(PTRACE_PEEKDATA, pid, remote_addr + i - a, NULL);
@@ -81,16 +81,16 @@ void* safemem_read_pid(pid_t pid, intptr_t remote_addr, size_t len) {
     i += b - a;
   }
 
-  addr = wptr + (len + 7 & ~0x7L); 
+  addr = wptr + ((len + 7) & ~0x7L); 
   return wptr;
 }
 
-void* safemem_read_pid_to_null(pid_t pid, intptr_t remote_addr) {
+void* safemem_read_pid_to_null(pid_t pid, uintptr_t remote_addr) {
   size_t max_size = (char*)base_addr + MAPPING_SIZE - (char*)addr;
 
   char* wptr = (char*)addr;
   for(size_t i = 0; ; ) {
-    intptr_t a = (remote_addr + i) & (sizeof(long) - 1);
+    uintptr_t a = (remote_addr + i) & (sizeof(long) - 1);
 
     errno = 0;
     long v = ptrace(PTRACE_PEEKDATA, pid, remote_addr + i - a, NULL);
@@ -101,7 +101,7 @@ void* safemem_read_pid_to_null(pid_t pid, intptr_t remote_addr) {
     char* vptr = (char*)&v + a;
     for(size_t ie = i + sizeof(long) - a; i != ie; i++, vptr++) {
       if(!(wptr[i] = *vptr)) {
-        addr = wptr + (i + 7 & ~0x7L); 
+        addr = wptr + ((i + 7) & ~0x7L); 
         return wptr;
       } else if(i + 1 == max_size) {
         return NULL;
@@ -110,10 +110,9 @@ void* safemem_read_pid_to_null(pid_t pid, intptr_t remote_addr) {
   }
 }
 
-intptr_t safemem_remote_addr(pid_t pid, void* local_ptr) {
+uintptr_t safemem_remote_addr(pid_t pid, void* local_ptr) {
   if(!proc[pid].safe_mem_base) return 0;
-  return proc[pid].safe_mem_base +
-          (intptr_t)((char*)local_ptr - (char*)base_addr);
+  return proc[pid].safe_mem_base + ((char*)local_ptr - (char*)base_addr);
 }
 
 static bool install_safe_memory(pid_t pid, process_state& st) {
@@ -149,7 +148,7 @@ static bool install_safe_memory_result(pid_t pid, process_state& st) {
 
 static bool safemem_filter_mapcall(process_state& st) {
   pid_t pid = st.get_pid();
-  intptr_t base = st.get_param(0);
+  uintptr_t base = st.get_param(0);
   size_t len = st.get_param(1);
   if(base < proc[pid].safe_mem_base) {
     return base + len > proc[pid].safe_mem_base;
@@ -277,7 +276,7 @@ filter_action memory_filter::filter_syscall_enter(process_state& st) {
 
     case sys_close:
       /* We need to protect mfd for future execs. */
-      if(st.get_param(0) == mfd) {
+      if(st.get_param(0) == (param_t)mfd) {
         return FILTER_BLOCK_SYSCALL;
       } else {
         return FILTER_NO_ACTION;
@@ -356,6 +355,7 @@ filter_action memory_filter::filter_syscall_exit(process_state& st) {
         mappings.add(map_base, map_base + map_len);
       }
     } break;
+    default: break;
   }
   max_memory = std::max(max_memory, mappings.size());
   if(!get_passive() && get_mem() &&

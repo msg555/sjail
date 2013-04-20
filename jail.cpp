@@ -43,7 +43,7 @@ int teardown_processes(const char* msg) {
   if(msg) {
     fprintf(stderr, "%s\n", msg);
   }
-  for(int i = 0; i < MAX_PIDS; i++) {
+  for(size_t i = 0; i < MAX_PIDS; i++) {
     if(proc[i].tracing_proc) {
       ptrace(PTRACE_KILL, i, NULL, NULL);
     }
@@ -183,7 +183,7 @@ int main(int argc, char ** argv) {
       syscall_failed("wait4");
       return teardown_processes(NULL);
     }
-    if(pid < 0 || MAX_PIDS <= pid) {
+    if(MAX_PIDS <= (size_t)pid) {
       return teardown_processes("unexpected pid from wait");
     }
     if(firstTrace) {
@@ -214,7 +214,7 @@ int main(int argc, char ** argv) {
           if(ptrace(PTRACE_GETEVENTMSG, pid, 0, &child_pid) == -1) {
             syscall_failed("ptrace(GETEVENTMSG)");
             return teardown_processes(NULL);
-          } else if(child_pid < 0 || MAX_PIDS <= child_pid) {
+          } else if(MAX_PIDS <= (size_t)child_pid) {
             return teardown_processes("unexpected child pid from ptrace");
           } else if(proc[child_pid].tracing_proc) {
             return teardown_processes("already tracing child");
