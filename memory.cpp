@@ -162,12 +162,6 @@ void safemem_reset() {
   addr = base_addr;
 }
 
-void safemem_sync() {
-  if(addr != base_addr) {
-    msync(base_addr, (char*)addr - (char*)base_addr, MS_SYNC | MS_INVALIDATE);
-  }
-}
-
 static range_tree<unsigned long> read_maps(pid_t pid,
                                            unsigned long page_size) {
   char buf[1024];
@@ -180,7 +174,9 @@ static range_tree<unsigned long> read_maps(pid_t pid,
     if(sscanf(buf, "%lx-%lx %6s", &addr, &endaddr, buf) != 3) {
       break;
     }
-    fscanf(fmaps, "\n");
+    if(fscanf(fmaps, "\n") != 0) {
+      break;
+    }
     if(buf[1] == 'w') {
       mapping.add(addr / page_size, endaddr / page_size);
     }

@@ -130,7 +130,6 @@ filter_action filter_system_call(pid_t pid) {
     action = filter_syscall_exit(st);
   }
 
-  safemem_sync();
   return action;
 }
 
