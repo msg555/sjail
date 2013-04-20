@@ -1,5 +1,7 @@
 #include <iostream>
 #include <cstdlib>
+
+#include <unistd.h>
 #include <errno.h>
 #include <sys/ptrace.h>
 #include <sys/types.h>
@@ -28,11 +30,12 @@ int syscall_failed(const char* msg) {
   return 1;
 }
 
-void setlimit(int res, int hardlimit) {
+void setlimit(int res, int softlimit) {
   struct rlimit rl;
-  rl.rlim_cur = rl.rlim_max = hardlimit;
+  rl.rlim_cur = softlimit;
+  rl.rlim_max = softlimit+softlimit;
   if(setrlimit(res, &rl)) {
-    exit(syscall_failed("setrlimit"));
+      exit(syscall_failed("setrlimit"));
   }
 }
 
@@ -60,7 +63,11 @@ bool cleanup_process(pid_t pid, size_t& trace_count) {
       delete fltr;
     }
   }
-  return --trace_count == 0;
+  if(--trace_count == 0) {
+    finalize_report();
+    return true;
+  }
+  return false;
 }
 
 int main(int argc, char ** argv) {
@@ -115,6 +122,12 @@ int main(int argc, char ** argv) {
     }
     if(get_time() != TIME_NO_LIMIT) {
       setlimit(RLIMIT_CPU, get_time());
+    }
+    if(get_mem() != MEM_NO_LIMIT) {
+      setlimit(RLIMIT_AS, get_mem());
+    }
+    if(get_file_limit() != FILE_NO_LIMIT){
+      setlimit(RLIMIT_FSIZE, get_file_limit());
     }
 
     struct passwd* pw_user = NULL;
@@ -180,11 +193,13 @@ int main(int argc, char ** argv) {
     }
 
     if(WIFSIGNALED(status)) {
+      log_resources(pid, &resources);
       log_term_signal(pid, WTERMSIG(status));
       if(cleanup_process(pid, trace_count)) {
         return 0;
       }
     } else if(WIFEXITED(status)) {
+      log_resources(pid, &resources);
       log_exit_status(pid, WEXITSTATUS(status));
       if(cleanup_process(pid, trace_count)) {
         return 0;
@@ -277,5 +292,3 @@ int main(int argc, char ** argv) {
 
   return 1;
 }
-
-

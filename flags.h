@@ -27,11 +27,13 @@ REGISTER_FLAG(exec_match, 0, std::string, "", "Valid filenames to pass to "
 #ifdef FLAG_SECTION
 FLAG_SECTION("Resources")
 #endif
-REGISTER_FLAG(time, 1, int, TIME_NO_LIMIT,
+REGISTER_FLAG(time, 1, rlim_t, TIME_NO_LIMIT,
               "The allowed runtime of the program. Default is no limit.")
-REGISTER_FLAG(mem, 1, long, MEM_NO_LIMIT,
+REGISTER_FLAG(mem, 1, rlim_t, MEM_NO_LIMIT,
               "The allowed memory limit of the program in KB. "
               "Default is no limit.")
+REGISTER_FLAG(file_limit, 0, rlim_t, FILE_NO_LIMIT,
+              "The allowed file size limit of the program. Default is no limit.")
 REGISTER_FLAG(cwd, 0, std::string, "", "Working directory of client "
               "application. This is called prior to any root changes.")
 REGISTER_FLAG(chroot, 0, std::string, "",

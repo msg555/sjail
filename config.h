@@ -3,12 +3,17 @@
 
 #include <iostream>
 #include <sstream>
+#include <sys/resource.h> 
 
-//#define DEBUG(x) cerr << x << endl
+#ifndef NDEBUG
+#define DEBUG(x) cerr << x << endl
+#else
 #define DEBUG(x)
+#endif
 
 #define TIME_NO_LIMIT 0
 #define MEM_NO_LIMIT 0
+#define FILE_NO_LIMIT 0
 
 #define REGISTER_FLAG(FLAG_NAME, ALLOW_SHORT, TYPE, DEFAULT, DESCRIPTION) \
   TYPE get_ ## FLAG_NAME (); \
