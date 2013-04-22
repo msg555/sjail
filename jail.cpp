@@ -171,6 +171,7 @@ int main(int argc, char ** argv) {
     cerr << "Failed to open report file" << endl;
     return teardown_processes(NULL);
   }
+  log_create(pid_root, getpid(), CREATE_ROOT);
 
   int fork_count = 0;
   int clone_count = 0;
@@ -233,6 +234,7 @@ int main(int argc, char ** argv) {
               child_pid = -1;
             } else {
               proc[child_pid].filters = clone_filters(proc[pid].filters);
+              log_create(child_pid, pid, CREATE_CLONE);
             }
           } else {
             ++fork_count;
@@ -245,6 +247,7 @@ int main(int argc, char ** argv) {
               child_pid = -1;
             } else {
               proc[child_pid].filters = fork_filters(proc[pid].filters);
+              log_create(child_pid, pid, CREATE_FORK);
             }
           }
           if(child_pid != -1) {

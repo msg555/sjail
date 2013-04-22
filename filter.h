@@ -41,7 +41,14 @@ class base_filter : public filter {
   base_filter();
   virtual ~base_filter();
 
+  virtual void on_exit(pid_t pid, exit_data& data);
+  virtual filter* on_clone();
+  virtual filter* on_fork();
+
   virtual filter_action filter_syscall_enter(process_state& st);
+
+ private:
+  unsigned long long start_wall_time;
 };
 
 class memory_filter : public filter {

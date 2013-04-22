@@ -1,33 +1,15 @@
-#include <iostream>
-#include <map>
-#include <stdlib.h>
-#include <sys/ptrace.h>
-#include <sys/user.h>
+#include <string>
+
 #include <errno.h>
-#include <signal.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <sys/un.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <unistd.h>
-#include <regex.h>
-#include <linux/net.h>
-#include <sys/syscall.h>
-#include <sys/mman.h>
-#include <fcntl.h>
+#include <stdlib.h>
+#include <sys/time.h>
 
 #include "config.h"
 #include "filter.h"
-#include "signal_tab.h"
-#include "report.h"
 #include "jail.h"
 #include "memory.h"
-
 #include "process_state.h"
-
-#include <cstdio>
+#include "report.h"
 
 static bool first_call = true;
 
@@ -201,10 +183,29 @@ filter_action filter::filter_syscall_exit(process_state& st) {
   return FILTER_NO_ACTION;
 }
 
+static unsigned long long query_wall_time_us() {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return tv.tv_sec * 1000000LL + tv.tv_usec;
+}
+
 base_filter::base_filter() {
+  start_wall_time = query_wall_time_us();
 }
 
 base_filter::~base_filter() {
+}
+
+void base_filter::on_exit(pid_t pid, exit_data& data) {
+  data.wall_time_us = query_wall_time_us() - start_wall_time;
+}
+
+filter* base_filter::on_clone() {
+  return ref();
+}
+
+filter* base_filter::on_fork() {
+  return new base_filter();
 }
 
 filter_action base_filter::filter_syscall_enter(process_state& st) {

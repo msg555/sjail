@@ -7,6 +7,7 @@
 #include "config.h"
 #include "process_state.h"
 #include "signal_tab.h"
+#include "report.h"
 
 /* TODO(msg555): For the JSON stuff we may need to escape some of the strings.
  */
@@ -34,20 +35,49 @@ bool finalize_report() {
   return !fclose(fout);
 }
 
+void log_create(pid_t pid, pid_t ppid, enum create_type type) {
+  if(!fout) {
+    return;
+  } else if(get_json()) {
+    fprintf(fout, "\t{\n");
+    fprintf(fout, "\t\t\"pid\": %d,\n", pid);
+    fprintf(fout, "\t\t\"type\": \"create\",\n");
+    if(type != CREATE_ROOT) {
+      fprintf(fout, "\t\t\"parent_pid\": %d,\n", ppid);
+      if(type == CREATE_FORK) {
+        fprintf(fout, "\t\t\"fork\": true\n");
+      } else {
+        fprintf(fout, "\t\t\"clone\": true\n");
+      }
+    }
+    fprintf(fout, "\t},\n");
+  } else {
+    if(type == CREATE_ROOT) {
+      fprintf(fout, "%d:root_process\n", pid);
+    } else {
+      fprintf(fout, "%d:%s_parent:%d\n", pid,
+              type == CREATE_FORK ? "fork" : "clone", ppid);
+    }
+  }
+  fflush(fout);
+}
+
 void log_exit(pid_t pid, const exit_data& data, bool final) {
   const rusage* res = data.resources;
   if(!fout) {
     return;
   } else if(get_json()) {
     fprintf(fout, "\t{\n");
-    fprintf(fout, "\t\t\"pid\": %d\n", pid);
-    fprintf(fout, "\t\t\"type\": \"exit\"\n");
-    fprintf(fout, "\t\t\"time_user_us\": %ld%06ld\n",
-            res->ru_utime.tv_sec, res->ru_utime.tv_usec);
-    fprintf(fout, "\t\t\"time_sys_us\": %ld%06ld\n",
-            res->ru_stime.tv_sec, res->ru_stime.tv_usec);
-    fprintf(fout, "\t\t\"max_rss_kb\": %ld\n", res->ru_maxrss);
-    fprintf(fout, "\t\t\"max_mapped_kb\": %lu\n", data.max_mapped_bytes / 1024);
+    fprintf(fout, "\t\t\"pid\": %d,\n", pid);
+    fprintf(fout, "\t\t\"type\": \"exit\",\n");
+    fprintf(fout, "\t\t\"time_user_us\": %lld,\n",
+            res->ru_utime.tv_sec * 1000000LL + res->ru_utime.tv_usec);
+    fprintf(fout, "\t\t\"time_sys_us\": %lld,\n",
+            res->ru_stime.tv_sec * 1000000LL + res->ru_stime.tv_usec);
+    fprintf(fout, "\t\t\"time_wall_us\": %llu,\n", data.wall_time_us);
+    fprintf(fout, "\t\t\"max_rss_kb\": %ld,\n", res->ru_maxrss);
+    fprintf(fout, "\t\t\"max_mapped_kb\": %lu,\n",
+            data.max_mapped_bytes / 1024);
     switch(data.type) {
       case EXIT_STATUS:
         fprintf(fout, "\t\t\"status\": %d\n", data.status);
@@ -66,6 +96,8 @@ void log_exit(pid_t pid, const exit_data& data, bool final) {
             res->ru_utime.tv_sec, res->ru_utime.tv_usec);
     fprintf(fout, "%d:system_time_sec:%ld.%06ld\n", pid,
             res->ru_stime.tv_sec, res->ru_stime.tv_usec);
+    fprintf(fout, "%d:wall_time_sec:%llu.%06llu\n", pid,
+            data.wall_time_us / 1000000, data.wall_time_us % 1000000);
     fprintf(fout, "%d:max_rss_kb:%ld\n", pid, res->ru_maxrss);
     fprintf(fout, "%d:max_mapped_kb:%lu\n", pid, data.max_mapped_bytes / 1024);
     switch(data.type) {
@@ -90,12 +122,12 @@ void log_blocked_syscall(process_state& st) {
     return;
   } else if(get_json()) {
     fprintf(fout, "\t{\n");
-    fprintf(fout, "\t\t\"pid\": %d\n", st.get_pid());
-    fprintf(fout, "\t\t\"type\": \"block\"\n");
-    fprintf(fout, "\t\t\"syscall\": \"%s\"\n", st.get_syscall_name(sys));
+    fprintf(fout, "\t\t\"pid\": %d,\n", st.get_pid());
+    fprintf(fout, "\t\t\"type\": \"block\",\n");
+    fprintf(fout, "\t\t\"syscall\": \"%s\",\n", st.get_syscall_name(sys));
     fprintf(fout, "\t\t\"params\": [\n");
     for(size_t i = 0, j = st.get_num_params(sys); i != j; i++) {
-      fprintf(fout, "\t\t\t0x%lx%s\n", st.get_param(i), i + 1 == j ? "" : ",");
+      fprintf(fout, "\t\t\t%lu%s\n", st.get_param(i), i + 1 == j ? "" : ",");
     }
     fprintf(fout, "\t\t]\n");
     fprintf(fout, "\t},\n");
@@ -113,8 +145,8 @@ void log_violation(pid_t pid, const std::string& message) {
     return;
   } else if(get_json()) {
     fprintf(fout, "\t{\n");
-    fprintf(fout, "\t\t\"pid\": %d\n", pid);
-    fprintf(fout, "\t\t\"type\": \"violation\"\n");
+    fprintf(fout, "\t\t\"pid\": %d,\n", pid);
+    fprintf(fout, "\t\t\"type\": \"violation\",\n");
     fprintf(fout, "\t\t\"message\": \"%s\"\n", message.c_str());
     fprintf(fout, "\t},\n");
   } else {
@@ -128,8 +160,8 @@ void log_error(pid_t pid, const std::string& message) {
     return;
   } else if(get_json()) {
     fprintf(fout, "\t{\n");
-    fprintf(fout, "\t\t\"pid\": %d\n", pid);
-    fprintf(fout, "\t\t\"type\": \"error\"\n");
+    fprintf(fout, "\t\t\"pid\": %d,\n", pid);
+    fprintf(fout, "\t\t\"type\": \"error\",\n");
     fprintf(fout, "\t\t\"message\": \"%s\"\n", message.c_str());
     fprintf(fout, "\t},\n");
   } else {
@@ -143,9 +175,9 @@ void log_info(pid_t pid, int level, const std::string& message) {
     return;
   } else if(get_json()) {
     fprintf(fout, "\t{\n");
-    fprintf(fout, "\t\t\"pid\": %d\n", pid);
-    fprintf(fout, "\t\t\"type\": \"log\"\n");
-    fprintf(fout, "\t\t\"level\": %d\n", level);
+    fprintf(fout, "\t\t\"pid\": %d,\n", pid);
+    fprintf(fout, "\t\t\"type\": \"log\",\n");
+    fprintf(fout, "\t\t\"level\": %d,\n", level);
     fprintf(fout, "\t\t\"message\": \"%s\"\n", message.c_str());
     fprintf(fout, "\t},\n");
   } else {

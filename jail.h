@@ -39,6 +39,7 @@ struct exit_data {
 
   rusage* resources;
   unsigned long max_mapped_bytes;
+  unsigned long long wall_time_us;
 };
 
 enum filter_action {
