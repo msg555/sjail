@@ -182,7 +182,7 @@ bool filter::unref() {
   return --refs == 0;
 }
 
-void filter::on_exit(pid_t pid) {
+void filter::on_exit(pid_t pid, exit_data& data) {
 }
 
 filter* filter::on_clone() {

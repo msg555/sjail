@@ -209,9 +209,8 @@ memory_filter::memory_filter() : heap_base(0), heap_end(0), max_memory(0) {
 memory_filter::~memory_filter() {
 }
 
-void memory_filter::on_exit(pid_t pid) {
-  log_info(pid, 2, "max memory usage: " +
-           convert<std::string>(max_memory * page_size));
+void memory_filter::on_exit(pid_t pid, exit_data& data) {
+  data.max_mapped_bytes = max_memory * page_size;
 }
 
 filter* memory_filter::on_fork() {
@@ -333,7 +332,7 @@ filter_action memory_filter::filter_syscall_exit(process_state& st) {
       }
     } break;
     case sys_mmap: {
-      if((st.get_param(2) & PROT_WRITE) && !st.is_error_result()) {
+      if(!st.is_error_result()) {
         unsigned long map_base = st.get_result() / page_size;
         unsigned long map_len = st.get_param(1) / page_size;
         mappings.add(map_base, map_base + map_len);
@@ -344,15 +343,6 @@ filter_action memory_filter::filter_syscall_exit(process_state& st) {
         unsigned long map_base = st.get_param(0) / page_size;
         unsigned long map_len = st.get_param(1) / page_size;
         mappings.rem(map_base, map_base + map_len);
-      }
-    } break;
-    case sys_mprotect: {
-      /* Once mapped as write the memory will be counted against you until you
-       * unmap.  We consider memory always mapped read/execute only as free. */
-      if((st.get_param(2) & PROT_WRITE) && !st.is_error_result()) {
-        unsigned long map_base = st.get_param(0) / page_size;
-        unsigned long map_len = st.get_param(1) / page_size;
-        mappings.add(map_base, map_base + map_len);
       }
     } break;
     default: break;

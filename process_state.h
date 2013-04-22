@@ -30,7 +30,9 @@ class process_state {
   enum SYSCALL get_syscall();
   void set_syscall(enum SYSCALL sys);
 
+  size_t get_num_params(enum SYSCALL sys);
   const char* get_syscall_name(enum SYSCALL sys);
+
   bool is_error_result();
 
   param_t get_result();

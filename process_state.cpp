@@ -12,7 +12,7 @@
 #define TS 0
 
 struct sysent {
-  unsigned nargs;
+  size_t nargs;
   int sys_flags;
   enum SYSCALL sysid;
   const char *sys_name;
@@ -232,6 +232,33 @@ void process_state::set_syscall(enum SYSCALL sys) {
     x86_64_regs.orig_rax = scno;
   }
 #endif
+}
+
+size_t process_state::get_num_params(SYSCALL sys) {
+  if(pers == 0) {
+    if(scno_tab0[sys] != (unsigned long)-1) {
+      return sysent0[scno_tab0[sys]].nargs;
+    }
+#ifdef HAVE_SYSENT1
+  } else if(pers == 1) {
+    if(scno_tab1[sys] != (unsigned long)-1) {
+      return sysent1[scno_tab1[sys]].nargs;
+    }
+#endif
+#ifdef HAVE_SYSENT2
+  } else if(pers == 2) {
+    if(scno_tab2[sys] != (unsigned long)-1) {
+      return sysent2[scno_tab2[sys]].nargs;
+    }
+#endif
+  } else {
+    error_state |= 1;
+    fprintf(stderr, "Bad personality\n");
+    return 0U;
+  }
+  error_state |= 1;
+  fprintf(stderr, "No syscall on architecture\n");
+  return 0U;
 }
 
 const char* process_state::get_syscall_name(SYSCALL sys) {

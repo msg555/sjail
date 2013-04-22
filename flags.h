@@ -72,3 +72,4 @@ REGISTER_FLAG(report_file, 0, std::string, "jail.out", "Sets the report file "
               "name. Default is jail.out.")
 REGISTER_FLAG(log_level, 1, int, 1, "Sets the logging level.  Level 5 gives "
               "everything.  Default is 1")
+REGISTER_FLAG(json, 1, bool, false, "Generate JSON reports")

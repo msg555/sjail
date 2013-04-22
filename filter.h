@@ -25,7 +25,7 @@ class filter {
   filter* ref();
   bool unref();
   
-  virtual void on_exit(pid_t pid);
+  virtual void on_exit(pid_t pid, exit_data& data);
   virtual filter* on_clone();
   virtual filter* on_fork();
 
@@ -49,7 +49,7 @@ class memory_filter : public filter {
   memory_filter();
   virtual ~memory_filter();
 
-  virtual void on_exit(pid_t pid);
+  virtual void on_exit(pid_t pid, exit_data& data);
   virtual filter* on_fork();
 
   virtual filter_action filter_syscall_enter(process_state& st);

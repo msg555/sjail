@@ -51,19 +51,21 @@ int teardown_processes(const char* msg) {
   return 1;
 }
 
-bool cleanup_process(pid_t pid, size_t& trace_count) {
+bool cleanup_process(pid_t pid, size_t& trace_count, exit_data& data) {
   proc[pid].tracing_proc = false;
   proc[pid].enter_call = false;
   for(; !proc[pid].filters.empty(); ) {
     filter* fltr = *proc[pid].filters.begin();
     proc[pid].filters.erase(proc[pid].filters.begin());
 
+    fltr->on_exit(pid, data);
     if(fltr->unref()) {
-      fltr->on_exit(pid);
       delete fltr;
     }
   }
-  if(--trace_count == 0) {
+  --trace_count;
+  log_exit(pid, data, trace_count == 0);
+  if(trace_count == 0) {
     finalize_report();
     return true;
   }
@@ -193,15 +195,15 @@ int main(int argc, char ** argv) {
     }
 
     if(WIFSIGNALED(status)) {
-      log_resources(pid, &resources);
-      log_term_signal(pid, WTERMSIG(status));
-      if(cleanup_process(pid, trace_count)) {
+      exit_data data(EXIT_SIGNAL, &resources);
+      data.signum = WTERMSIG(status);
+      if(cleanup_process(pid, trace_count, data)) {
         return 0;
       }
     } else if(WIFEXITED(status)) {
-      log_resources(pid, &resources);
-      log_exit_status(pid, WEXITSTATUS(status));
-      if(cleanup_process(pid, trace_count)) {
+      exit_data data(EXIT_STATUS, &resources);
+      data.status = WEXITSTATUS(status);
+      if(cleanup_process(pid, trace_count, data)) {
         return 0;
       }
     } else if(WIFSTOPPED(status)) {
@@ -252,21 +254,23 @@ int main(int argc, char ** argv) {
           }
         } else try {
           switch(filter_system_call(pid)) {
-            case FILTER_KILL_PID:
+            case FILTER_KILL_PID: {
+              exit_data data(EXIT_KILLED, &resources);
               if(kill(pid, SIGKILL)) {
                 syscall_failed("kill");
                 return teardown_processes(NULL);
-              } else if(cleanup_process(pid, trace_count)) {
+              } else if(cleanup_process(pid, trace_count, data)) {
                 return 0;
               }
               break;
-            case FILTER_KILL_ALL:
+            } case FILTER_KILL_ALL: {
               return teardown_processes(NULL);
               break;
-            default:
+            } default: {
               errno = 0;
               ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
               break;
+            }
           }
         } catch(std::bad_alloc) {
           log_error(pid, "out of state space");
