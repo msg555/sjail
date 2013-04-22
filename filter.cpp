@@ -14,10 +14,15 @@
 static bool first_call = true;
 
 static filter_action filter_syscall_enter(process_state& st) {
+  pid_t pid = st.get_pid();
+  if(get_report() && get_log_level() >= 5) {
+    log_info(pid, 5, std::string("syscall ") +
+              st.get_syscall_name(st.get_syscall()));
+  }
+
   bool block = false;
   bool permit = false;
   bool save = false;
-  pid_t pid = st.get_pid();
   for(std::list<filter*>::iterator it = proc[pid].filters.begin();
       it != proc[pid].filters.end() && !block && !permit; it++) {
     switch((*it)->filter_syscall_enter(st)) {
@@ -30,11 +35,6 @@ static filter_action filter_syscall_enter(process_state& st) {
     }
   }
   block |= !permit;
-
-  if(get_report() && get_log_level() >= 5) {
-    log_info(pid, 5, std::string("syscall ") +
-              st.get_syscall_name(st.get_syscall()));
-  }
 
   if(save) {
     st.set_result(-EPERM);
@@ -121,7 +121,7 @@ std::list<filter*> create_root_filters() {
   if(!get_files().empty()) {
     filters.push_back(new file_filter());
   }
-  if(!get_exec_match().empty()) {
+  if(!get_exec_match().empty() || get_processes() != 0 || get_threads() != 0) {
     filters.push_back(new exec_filter());
   }
   if(get_net()) {
@@ -238,6 +238,10 @@ filter_action base_filter::filter_syscall_enter(process_state& st) {
     case sys_getgid:
     case sys_getegid:
     case sys_getresgid:
+      break;
+
+    case sys_futex:
+    case sys_nanosleep:
       break;
 
     default:

@@ -85,6 +85,11 @@ class exec_filter : public filter {
   virtual ~exec_filter();
 
   virtual filter_action filter_syscall_enter(process_state& st);
+  virtual filter_action filter_syscall_exit(process_state& st);
+
+ private:
+  size_t fork_count;
+  size_t clone_count;
 };
 
 class net_filter : public filter {

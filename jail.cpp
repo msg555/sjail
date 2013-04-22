@@ -23,6 +23,7 @@
 
 using namespace std;
 
+size_t trace_count;
 pid_data proc[MAX_PIDS];
 
 int syscall_failed(const char* msg) {
@@ -51,7 +52,10 @@ int teardown_processes(const char* msg) {
   return 1;
 }
 
-bool cleanup_process(pid_t pid, size_t& trace_count, exit_data& data) {
+bool cleanup_process(pid_t pid, exit_data& data) {
+  if(!proc[pid].tracing_proc) {
+    return false;
+  }
   proc[pid].tracing_proc = false;
   proc[pid].enter_call = false;
   for(; !proc[pid].filters.empty(); ) {
@@ -95,8 +99,7 @@ int main(int argc, char ** argv) {
 
   int pid_root = fork();
   if(pid_root == -1) {
-    cerr << "Fork failed" << endl;
-    return 1;
+    return syscall_failed("fork failed");
   } else if(pid_root == 0) {
     if(!safemem_map_unwritable()) {
       return syscall_failed("failed to map memory");
@@ -163,27 +166,23 @@ int main(int argc, char ** argv) {
     return syscall_failed("execvp");
   }
 
+  trace_count = 1;
   proc[pid_root].tracing_proc = true;
   proc[pid_root].enter_call = true;
   proc[pid_root].filters = create_root_filters();
 
   if(!init_report()) {
-    cerr << "Failed to open report file" << endl;
-    return teardown_processes(NULL);
+    return teardown_processes("failed to open report file");
   }
   log_create(pid_root, getpid(), CREATE_ROOT);
 
-  int fork_count = 0;
-  int clone_count = 0;
-  bool firstTrace = true;
-  size_t trace_count = 1;
-  for(;;) {
+  for(bool firstTrace = true; ; firstTrace = false) {
     pid_t pid;
     int status;
     rusage resources;
-    pid = wait3(&status, WUNTRACED, &resources);
+    pid = wait3(&status, __WALL, &resources);
     if(pid == -1) {
-      syscall_failed("wait4");
+      syscall_failed("wait3");
       return teardown_processes(NULL);
     }
     if(MAX_PIDS <= (size_t)pid) {
@@ -195,16 +194,17 @@ int main(int argc, char ** argv) {
       firstTrace = false;
     }
 
+
     if(WIFSIGNALED(status)) {
       exit_data data(EXIT_SIGNAL, &resources);
       data.signum = WTERMSIG(status);
-      if(cleanup_process(pid, trace_count, data)) {
+      if(cleanup_process(pid, data)) {
         return 0;
       }
     } else if(WIFEXITED(status)) {
       exit_data data(EXIT_STATUS, &resources);
       data.status = WEXITSTATUS(status);
-      if(cleanup_process(pid, trace_count, data)) {
+      if(cleanup_process(pid, data)) {
         return 0;
       }
     } else if(WIFSTOPPED(status)) {
@@ -213,7 +213,7 @@ int main(int argc, char ** argv) {
         if((status >> 16 & 0xFFFF) == PTRACE_EVENT_FORK ||
            (status >> 16 & 0xFFFF) == PTRACE_EVENT_VFORK ||
            (status >> 16 & 0xFFFF) == PTRACE_EVENT_CLONE) {
-          pid_t child_pid = -1;
+          pid_t child_pid;
           if(ptrace(PTRACE_GETEVENTMSG, pid, 0, &child_pid) == -1) {
             syscall_failed("ptrace(GETEVENTMSG)");
             return teardown_processes(NULL);
@@ -221,50 +221,32 @@ int main(int argc, char ** argv) {
             return teardown_processes("unexpected child pid from ptrace");
           } else if(proc[child_pid].tracing_proc) {
             return teardown_processes("already tracing child");
-          }
-          if((status >> 16 & 0xFFFF) == PTRACE_EVENT_CLONE) {
-            ++clone_count;
-            if(get_threads() >= 0 && clone_count > get_threads()) {
-              log_violation(pid, "global thread count too high");
-              if(kill(child_pid, SIGKILL)) {
-                syscall_failed("kill");
-                teardown_processes(NULL);
-                return 1;
-              }
-              child_pid = -1;
-            } else {
+          } else {
+            trace_count++;
+            proc[child_pid].tracing_proc = true;
+            proc[child_pid].safe_mem_base = proc[pid].safe_mem_base;
+            if((status >> 16 & 0xFFFF) == PTRACE_EVENT_CLONE) {
               proc[child_pid].filters = clone_filters(proc[pid].filters);
               log_create(child_pid, pid, CREATE_CLONE);
-            }
-          } else {
-            ++fork_count;
-            if(get_processes() >= 0 && fork_count > get_processes()) {
-              log_violation(pid, "global process count too high");
-              if(kill(child_pid, SIGKILL)) {
-                syscall_failed("kill");
-                return teardown_processes(NULL);
-              }
-              child_pid = -1;
             } else {
               proc[child_pid].filters = fork_filters(proc[pid].filters);
               log_create(child_pid, pid, CREATE_FORK);
             }
           }
-          if(child_pid != -1) {
-            proc[child_pid].tracing_proc = true;
-            proc[child_pid].safe_mem_base = proc[pid].safe_mem_base;
-            trace_count++;
-          }
+
+          errno = 0;
+          ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
         } else try {
           switch(filter_system_call(pid)) {
             case FILTER_KILL_PID: {
               exit_data data(EXIT_KILLED, &resources);
-              if(kill(pid, SIGKILL)) {
-                syscall_failed("kill");
+              if(ptrace(PTRACE_KILL, pid, NULL, NULL)) {
+                syscall_failed("ptrace kill");
                 return teardown_processes(NULL);
-              } else if(cleanup_process(pid, trace_count, data)) {
+              } else if(cleanup_process(pid, data)) {
                 return 0;
               }
+              errno = 0;
               break;
             } case FILTER_KILL_ALL: {
               return teardown_processes(NULL);
@@ -280,15 +262,20 @@ int main(int argc, char ** argv) {
           return teardown_processes("out of memory");
         }
       } else {
-        errno = 0;
-        ptrace(PTRACE_CONT, pid, NULL, (void*)(intptr_t)sig);
+        ptrace(PTRACE_SYSCALL, pid, NULL, (void*)(intptr_t)sig);
         log_info(pid, 2, "signal " + get_signal_name(sig) + " delivered");
       }
 
       if(errno) {
-        cerr << "ptrace resume failed" << endl;
-        kill(pid, SIGKILL);
-        return 1;
+        syscall_failed("ptrace resume failed");
+
+        exit_data data(EXIT_KILLED, &resources);
+        if(ptrace(PTRACE_KILL, pid, NULL, NULL)) {
+          syscall_failed("ptrace kill");
+          return teardown_processes(NULL);
+        } else if(cleanup_process(pid, data)) {
+          return 0;
+        }
       }
     } else if(WIFCONTINUED(status)) {
       DEBUG("Child was allowed to continue");

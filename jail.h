@@ -51,6 +51,7 @@ enum filter_action {
   FILTER_CHANGED_SYSCALL
 };
 
+extern size_t trace_count;
 extern pid_data proc[MAX_PIDS];
 
 #endif // JAIL_JAIL_H

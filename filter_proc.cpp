@@ -1,7 +1,9 @@
 #include <limits.h>
 #include <regex.h>
 #include <stdlib.h>
+#include <stdio.h>
 
+#include <signal.h>
 #include <sys/ptrace.h>
 #include <sys/user.h>
 
@@ -18,17 +20,13 @@ using namespace std;
 static int regex_init = false;
 static regex_t exec_reg;
 
-exec_filter::exec_filter() {
+exec_filter::exec_filter() : fork_count(0), clone_count(0) {
 }
 
 exec_filter::~exec_filter() {
 }
 
-filter_action exec_filter::filter_syscall_enter(process_state& st) {
-  if(st.get_syscall() != sys_execve) {
-    return FILTER_NO_ACTION;
-  }
-
+static filter_action filter_exec(process_state& st) {
   pid_t pid = st.get_pid();
   if(!regex_init) {
     if(regcomp(&exec_reg, get_exec_match().c_str(),
@@ -60,4 +58,64 @@ filter_action exec_filter::filter_syscall_enter(process_state& st) {
   }
 
   return FILTER_PERMIT_SYSCALL;
+}
+
+filter_action exec_filter::filter_syscall_enter(process_state& st) {
+  bool isfork = false;
+  switch(st.get_syscall()) {
+    case sys_execve:
+      return filter_exec(st);
+
+    case sys_fork:
+    case sys_vfork:
+      isfork = true;
+
+    case sys_clone:
+      if(!isfork) {
+        /* Force CLONE_PTRACE into the flags. */
+        param_t flags = st.get_param(0);
+        flags |= CLONE_PTRACE;
+        flags &= ~CLONE_UNTRACED;
+        st.set_param(0, flags);
+        st.save();
+
+        /* This is the same rule that ptrace(2) uses to differentiate between a
+         * fork and a clone. */
+        isfork = (flags & 0xFF) == SIGCHLD;
+      }
+      if(isfork && (get_processes() < 0 ||
+                    fork_count < (size_t)get_processes())) {
+        ++fork_count;
+        return FILTER_PERMIT_SYSCALL;
+      } else if(!isfork && (get_threads() < 0 ||
+                            clone_count < (size_t)get_threads())) {
+        ++clone_count;
+        return FILTER_PERMIT_SYSCALL;
+      }
+      return FILTER_BLOCK_SYSCALL;
+
+    default:
+      return FILTER_NO_ACTION;
+  }
+}
+
+filter_action exec_filter::filter_syscall_exit(process_state& st) {
+  bool isfork = false;
+  switch(st.get_syscall()) {
+    case sys_fork:
+    case sys_vfork:
+      isfork = true;
+
+    case sys_clone:
+      if(!isfork) {
+        isfork = (st.get_param(0) & 0xFF) == SIGCHLD;
+      }
+      if(st.is_error_result()) {
+        --(isfork ? fork_count : clone_count);
+      }
+      break;
+
+    default: break;
+  }
+  return FILTER_NO_ACTION;
 }
