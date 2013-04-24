@@ -308,10 +308,8 @@ int main(int argc, char ** argv) {
           return 0;
         }
       }
-    } else if(WIFCONTINUED(status)) {
-      DEBUG("Child was allowed to continue");
-    } else {
-      cerr << "Unknown status returned by wait4" << endl;
+    } else if(!WIFCONTINUED(status)) {
+      return teardown_processes("unknown status from wait");
     }
   }
 

@@ -1,4 +1,4 @@
-CPPFLAGS = -O3 -DNDEBUG -Wall -Werror
+CPPFLAGS = -O3 -Wall -Werror
 
 OBJECTS = \
   out/config.o \

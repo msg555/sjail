@@ -5,12 +5,6 @@
 #include <sstream>
 #include <sys/resource.h> 
 
-#ifndef NDEBUG
-#define DEBUG(x) cerr << x << endl
-#else
-#define DEBUG(x)
-#endif
-
 #define TIME_NO_LIMIT 0
 #define MEM_NO_LIMIT 0
 #define FILE_NO_LIMIT 0
