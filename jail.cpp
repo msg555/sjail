@@ -12,6 +12,8 @@
 #include <pwd.h>
 #include <stdio.h>
 #include <string.h>
+#include <signal.h>
+#include <sys/syscall.h>
 
 #include "jail.h"
 #include "report.h"
@@ -36,7 +38,7 @@ void setlimit(int res, int softlimit) {
   rl.rlim_cur = softlimit;
   rl.rlim_max = softlimit+softlimit;
   if(setrlimit(res, &rl)) {
-      exit(syscall_failed("setrlimit"));
+    exit(syscall_failed("setrlimit"));
   }
 }
 
@@ -46,7 +48,7 @@ int teardown_processes(const char* msg) {
   }
   for(size_t i = 0; i < MAX_PIDS; i++) {
     if(proc[i].tracing_proc) {
-      ptrace(PTRACE_KILL, i, NULL, NULL);
+      syscall(SYS_tkill, i, SIGKILL);
     }
   }
   return 1;
@@ -74,6 +76,17 @@ bool cleanup_process(pid_t pid, exit_data& data) {
     return true;
   }
   return false;
+}
+
+static volatile bool alarm_fired = false;
+static volatile bool in_wait = false;
+
+static void handle_sigalrm(int signal) {
+  if(in_wait) {
+    teardown_processes(NULL);
+  } else {
+    alarm_fired = true;
+  }
 }
 
 int main(int argc, char ** argv) {
@@ -176,11 +189,30 @@ int main(int argc, char ** argv) {
   }
   log_create(pid_root, getpid(), CREATE_ROOT);
 
+  if(get_wall_time() != TIME_NO_LIMIT) {
+    struct sigaction sigact;
+    sigact.sa_handler = handle_sigalrm;
+    sigact.sa_flags = SA_RESTART;
+    sigfillset(&sigact.sa_mask);
+    if(sigaction(SIGALRM, &sigact, NULL)) {
+      return syscall_failed("sigaction");
+    }
+    alarm(get_wall_time());
+  }
+
   for(bool firstTrace = true; ; firstTrace = false) {
     pid_t pid;
     int status;
     rusage resources;
+
+    in_wait = true;
+    if(alarm_fired) {
+      teardown_processes(NULL);
+      alarm_fired = false;
+    }
     pid = wait3(&status, __WALL, &resources);
+    in_wait = false;
+
     if(pid == -1) {
       syscall_failed("wait3");
       return teardown_processes(NULL);
@@ -193,7 +225,6 @@ int main(int argc, char ** argv) {
              PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_TRACECLONE);
       firstTrace = false;
     }
-
 
     if(WIFSIGNALED(status)) {
       exit_data data(EXIT_SIGNAL, &resources);

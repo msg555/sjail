@@ -29,7 +29,9 @@ bool init_report() {
 }
 
 bool finalize_report() {
-  if(get_json()) {
+  if(!fout) {
+    return true;
+  } else if(get_json()) {
     fprintf(fout, "]\n");
   }
   return !fclose(fout);
