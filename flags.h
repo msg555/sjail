@@ -28,8 +28,7 @@ REGISTER_FLAG(exec_match, 0, std::string, "", "Valid filenames to pass to "
 FLAG_SECTION("Resources")
 #endif
 REGISTER_FLAG(time, 1, rlim_t, TIME_NO_LIMIT,
-              "The allowed cpu runtime of allowed for any thread group. "
-              "Default is no limit.")
+              "The allowed cpu time for any thread group. Default is no limit.")
 REGISTER_FLAG(wall_time, 1, rlim_t, TIME_NO_LIMIT,
               "The maximum wall time jail will run before terminating all "
               "children and exiting. Default is no limit.")
