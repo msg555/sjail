@@ -6,7 +6,7 @@
 
 #include "config.h"
 #include "filter.h"
-#include "jail.h"
+#include "sjail.h"
 #include "memory.h"
 #include "process_state.h"
 #include "report.h"

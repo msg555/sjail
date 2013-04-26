@@ -15,7 +15,7 @@
 #include <signal.h>
 #include <sys/syscall.h>
 
-#include "jail.h"
+#include "sjail.h"
 #include "report.h"
 #include "config.h"
 #include "signal_tab.h"

@@ -9,13 +9,10 @@
 
 #include "config.h"
 #include "filter.h"
-#include "jail.h"
 #include "memory.h"
-#include "report.h"
-
 #include "process_state.h"
-
-using namespace std;
+#include "report.h"
+#include "sjail.h"
 
 static int regex_init = false;
 static regex_t exec_reg;
@@ -44,7 +41,7 @@ static filter_action filter_exec(process_state& st) {
   }
 
   if(regexec(&exec_reg, filename, 0, NULL, 0)) {
-    log_violation(pid, "invalid execve filename " + string(filename));
+    log_violation(pid, "invalid execve filename " + std::string(filename));
     return FILTER_BLOCK_SYSCALL;
   }
 

@@ -5,7 +5,7 @@
 #include <sys/types.h>
 
 #include "range_tree.h"
-#include "jail.h"
+#include "sjail.h"
 
 class filter;
 class process_state;

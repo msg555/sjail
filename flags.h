@@ -6,12 +6,12 @@ REGISTER_FLAG(help, 0, bool, false,
 REGISTER_FLAG(passive, 1, bool, false,
               "Only monitor jailed program.  Do not block any system calls. "
               "Does not affect flags in resources section")
-REGISTER_FLAG(conf_file, 1, std::string, "jail.conf",
+REGISTER_FLAG(conf_file, 1, std::string, "sjail.conf",
               "Read in configuration key value pairs from file. "
-              "Default is jail.conf")
+              "Default is sjail.conf")
 REGISTER_FLAG(no_conf, 0, bool, false,
               "Only take configuration through the command line.  Ignores the "
-              "conf_file flag and default jail.conf file")
+              "conf_file flag and default sjail.conf file")
 
 #ifdef FLAG_SECTION
 FLAG_SECTION("Processes")
@@ -30,7 +30,7 @@ FLAG_SECTION("Resources")
 REGISTER_FLAG(time, 1, rlim_t, TIME_NO_LIMIT,
               "The allowed cpu time for any thread group. Default is no limit.")
 REGISTER_FLAG(wall_time, 1, rlim_t, TIME_NO_LIMIT,
-              "The maximum wall time jail will run before terminating all "
+              "The maximum wall time sjail will run before terminating all "
               "children and exiting. Default is no limit.")
 REGISTER_FLAG(mem, 1, rlim_t, MEM_NO_LIMIT,
               "The allowed memory limit of the program in KB. "
@@ -71,8 +71,8 @@ REGISTER_FLAG(rdonly, 0, bool, false, "Restrict file access to read only. "
 FLAG_SECTION("Reporting")
 #endif
 REGISTER_FLAG(report, 1, bool, false, "Enables report generation.")
-REGISTER_FLAG(report_file, 0, std::string, "jail.out", "Sets the report file "
-              "name. Default is jail.out.")
+REGISTER_FLAG(report_file, 0, std::string, "sjail.out", "Sets the report file "
+              "name. Default is sjail.out.")
 REGISTER_FLAG(log_level, 1, int, 1, "Sets the logging level.  Level 5 gives "
               "everything.  Default is 1")
 REGISTER_FLAG(json, 1, bool, false, "Generate JSON reports")

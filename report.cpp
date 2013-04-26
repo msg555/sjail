@@ -3,7 +3,7 @@
 #include <cstdlib>
 #include <cstdio>
 
-#include "jail.h"
+#include "sjail.h"
 #include "config.h"
 #include "process_state.h"
 #include "signal_tab.h"

@@ -91,9 +91,8 @@ bool parse_file(const char * file) {
   return true;
 }
 
-int parse_arguments(int argc, char ** argv) {
+int parse_arguments(int argc, char** argv) {
   int p;
-	parse_file("jail.conf");
 	for(p = 1; p < argc && argv[p][0] == '-'; p++) {
     if(argv[p][1] == '-') {
       #define REGISTER_FLAG(FLAG_NAME, ALLOW_SHORT, TYPE, DEFAULT, DESCRIPTION) \

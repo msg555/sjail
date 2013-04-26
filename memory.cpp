@@ -14,7 +14,7 @@
 #include <fcntl.h>
 
 #include "config.h"
-#include "jail.h"
+#include "sjail.h"
 #include "process_state.h"
 #include "filter.h"
 #include "report.h"

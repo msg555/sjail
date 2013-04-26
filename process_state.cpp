@@ -130,7 +130,7 @@ process_state::process_state(pid_t pid) : pid(pid), error_state(0), pers(0) {
    */
   switch (pers) {
     case 0:
-      fprintf(stderr, "64-bit mode not supported for x32 jail\n");
+      fprintf(stderr, "64-bit mode not supported for x32 sjail\n");
       error_state |= 1;
       break;
     case 2:

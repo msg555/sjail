@@ -7,7 +7,7 @@
 #include <sys/ptrace.h>
 
 #include "config.h"
-#include "jail.h"
+#include "sjail.h"
 #include "filter.h"
 #include "memory.h"
 #include "report.h"
