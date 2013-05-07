@@ -221,8 +221,13 @@ int main(int argc, char ** argv) {
       return teardown_processes("unexpected pid from wait");
     }
     if(firstTrace) {
+      /* The first time we wait for the child is on exit to execve.  After this
+       * syscalls traps will have bit 15 set in the status due to TRACESYSGOOD.
+       */
+      status |= 1 << 15;
       ptrace(PTRACE_SETOPTIONS, pid, NULL,
-             PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_TRACECLONE);
+             PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK |
+             PTRACE_O_TRACECLONE | PTRACE_O_TRACESYSGOOD);
       firstTrace = false;
     }
 
@@ -240,58 +245,57 @@ int main(int argc, char ** argv) {
       }
     } else if(WIFSTOPPED(status)) {
       int sig = WSTOPSIG(status);
-      if(sig == SIGTRAP) {
-        if((status >> 16 & 0xFFFF) == PTRACE_EVENT_FORK ||
-           (status >> 16 & 0xFFFF) == PTRACE_EVENT_VFORK ||
-           (status >> 16 & 0xFFFF) == PTRACE_EVENT_CLONE) {
-          pid_t child_pid;
-          if(ptrace(PTRACE_GETEVENTMSG, pid, 0, &child_pid) == -1) {
-            syscall_failed("ptrace(GETEVENTMSG)");
-            return teardown_processes(NULL);
-          } else if(MAX_PIDS <= (size_t)child_pid) {
-            return teardown_processes("unexpected child pid from ptrace");
-          } else if(proc[child_pid].tracing_proc) {
-            return teardown_processes("already tracing child");
+      if(sig == SIGTRAP && (
+          (status >> 16 & 0xFFFF) == PTRACE_EVENT_FORK ||
+          (status >> 16 & 0xFFFF) == PTRACE_EVENT_VFORK ||
+          (status >> 16 & 0xFFFF) == PTRACE_EVENT_CLONE)) {
+        pid_t child_pid;
+        if(ptrace(PTRACE_GETEVENTMSG, pid, 0, &child_pid) == -1) {
+          syscall_failed("ptrace(GETEVENTMSG)");
+          return teardown_processes(NULL);
+        } else if(MAX_PIDS <= (size_t)child_pid) {
+          return teardown_processes("unexpected child pid from ptrace");
+        } else if(proc[child_pid].tracing_proc) {
+          return teardown_processes("already tracing child");
+        } else {
+          trace_count++;
+          proc[child_pid].tracing_proc = true;
+          proc[child_pid].safe_mem_base = proc[pid].safe_mem_base;
+          if((status >> 16 & 0xFFFF) == PTRACE_EVENT_CLONE) {
+            proc[child_pid].filters = clone_filters(proc[pid].filters);
+            log_create(child_pid, pid, CREATE_CLONE);
           } else {
-            trace_count++;
-            proc[child_pid].tracing_proc = true;
-            proc[child_pid].safe_mem_base = proc[pid].safe_mem_base;
-            if((status >> 16 & 0xFFFF) == PTRACE_EVENT_CLONE) {
-              proc[child_pid].filters = clone_filters(proc[pid].filters);
-              log_create(child_pid, pid, CREATE_CLONE);
-            } else {
-              proc[child_pid].filters = fork_filters(proc[pid].filters);
-              log_create(child_pid, pid, CREATE_FORK);
-            }
+            proc[child_pid].filters = fork_filters(proc[pid].filters);
+            log_create(child_pid, pid, CREATE_FORK);
           }
-
-          errno = 0;
-          ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
-        } else try {
-          switch(filter_system_call(pid)) {
-            case FILTER_KILL_PID: {
-              exit_data data(EXIT_KILLED, &resources);
-              if(ptrace(PTRACE_KILL, pid, NULL, NULL)) {
-                syscall_failed("ptrace kill");
-                return teardown_processes(NULL);
-              } else if(cleanup_process(pid, data)) {
-                return 0;
-              }
-              errno = 0;
-              break;
-            } case FILTER_KILL_ALL: {
-              return teardown_processes(NULL);
-              break;
-            } default: {
-              errno = 0;
-              ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
-              break;
-            }
-          }
-        } catch(std::bad_alloc) {
-          log_error(pid, "out of state space");
-          return teardown_processes("out of memory");
         }
+
+        errno = 0;
+        ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
+      } else if(sig == (SIGTRAP | 0x80)) try {
+        switch(filter_system_call(pid)) {
+          case FILTER_KILL_PID: {
+            exit_data data(EXIT_KILLED, &resources);
+            if(ptrace(PTRACE_KILL, pid, NULL, NULL)) {
+              syscall_failed("ptrace kill");
+              return teardown_processes(NULL);
+            } else if(cleanup_process(pid, data)) {
+              return 0;
+            }
+            errno = 0;
+            break;
+          } case FILTER_KILL_ALL: {
+            return teardown_processes(NULL);
+            break;
+          } default: {
+            errno = 0;
+            ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
+            break;
+          }
+        }
+      } catch(std::bad_alloc) {
+        log_error(pid, "out of state space");
+        return teardown_processes("out of memory");
       } else {
         ptrace(PTRACE_SYSCALL, pid, NULL, (void*)(intptr_t)sig);
         log_info(pid, 2, "signal " + get_signal_name(sig) + " delivered");
