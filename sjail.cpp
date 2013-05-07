@@ -227,7 +227,8 @@ int main(int argc, char ** argv) {
       status |= 1 << 15;
       ptrace(PTRACE_SETOPTIONS, pid, NULL,
              PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK |
-             PTRACE_O_TRACECLONE | PTRACE_O_TRACESYSGOOD);
+             PTRACE_O_TRACECLONE | PTRACE_O_TRACESYSGOOD |
+             PTRACE_O_TRACEEXEC);
       firstTrace = false;
     }
 
@@ -297,8 +298,13 @@ int main(int argc, char ** argv) {
         log_error(pid, "out of state space");
         return teardown_processes("out of memory");
       } else {
+        if (sig == SIGTRAP && (status >> 16 & 0xFFFF) == PTRACE_EVENT_EXEC) {
+          sig = 0;
+        }
         ptrace(PTRACE_SYSCALL, pid, NULL, (void*)(intptr_t)sig);
-        log_info(pid, 2, "signal " + get_signal_name(sig) + " delivered");
+        if(sig != 0) {
+          log_info(pid, 2, "signal " + get_signal_name(sig) + " delivered");
+        }
       }
 
       if(errno) {

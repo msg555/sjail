@@ -139,11 +139,8 @@ process_state::process_state(pid_t pid) : pid(pid), error_state(0), pers(0) {
   }
 # endif
 #endif
-}
 
-enum SYSCALL process_state::get_syscall() {
   unsigned long scno;
-
 #if defined(I386)
   scno = i386_regs.orig_eax;
 #else
@@ -159,42 +156,45 @@ enum SYSCALL process_state::get_syscall() {
   }
 #endif
 
+  sys = sys_none;
   if(pers == 0) {
     if(scno < sizeof(sysent0) / sizeof(sysent)) {
-      return sysent0[scno].sysid;
+      sys = sysent0[scno].sysid;
     } else {
       error_state |= 1;
       fprintf(stderr, "Bad syscall number\n");
-      return sys_none;
     }
 #ifdef HAVE_SYSENT1
   } else if(pers == 1) {
     if(scno < sizeof(sysent1) / sizeof(sysent)) {
-      return sysent1[scno].sysid;
+      sys = sysent1[scno].sysid;
     } else {
       error_state |= 1;
       fprintf(stderr, "Bad syscall number\n");
-      return sys_none;
     }
 #endif
 #ifdef HAVE_SYSENT2
   } else if(pers == 2) {
     if(scno < sizeof(sysent2) / sizeof(sysent)) {
-      return sysent2[scno].sysid;
+      sys = sysent2[scno].sysid;
     } else {
       error_state |= 1;
       fprintf(stderr, "Bad syscall number\n");
-      return sys_none;
     }
 #endif
   } else {
     error_state |= 1;
     fprintf(stderr, "Bad personality\n");
-    return sys_none;
   }
 }
 
+enum SYSCALL process_state::get_syscall() {
+  return sys;
+}
+
 void process_state::set_syscall(enum SYSCALL sys) {
+  this->sys = sys;
+
   unsigned long scno;
   if(pers == 0) {
     scno = scno_tab0[sys];

@@ -54,6 +54,7 @@ class process_state {
   pid_t pid;
   int error_state;
   size_t pers;
+
 #if defined(I386)
   struct user_regs_struct i386_regs;
 #elif defined(X32) || defined(X86_64)
@@ -61,6 +62,7 @@ class process_state {
 #else
   #error "unknown architecture"
 #endif
+  enum SYSCALL sys;
 };
 
 #endif // PROCESS_STATE_H

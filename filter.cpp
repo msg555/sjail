@@ -36,7 +36,7 @@ static filter_action filter_syscall_enter(process_state& st) {
   }
   block |= !permit;
 
-  if(save) {
+  if(save && !get_passive()) {
     st.set_result(-EPERM);
     proc[pid].restore_state = new process_state(st);
   }
@@ -83,7 +83,7 @@ filter_action filter_system_call(pid_t pid) {
   process_state st(pid);
   if(st.error()) {
     log_error(pid, "ptrace_getregs failed");
-    return FILTER_KILL_PID;
+    return get_passive() ? FILTER_NO_ACTION : FILTER_KILL_PID;
   }
 
   /* We expect the very first filtered system call to be execve. */
@@ -112,7 +112,7 @@ filter_action filter_system_call(pid_t pid) {
     action = filter_syscall_exit(st);
   }
 
-  return action;
+  return get_passive() ? FILTER_NO_ACTION : action;
 }
 
 std::list<filter*> create_root_filters() {
