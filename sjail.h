@@ -18,6 +18,7 @@ struct pid_data {
   bool installing_safe_mem;
   uintptr_t safe_mem_base;
   process_state* restore_state;
+  std::list<std::pair<char*, size_t> > allocations;
   std::list<filter*> filters;
 };
 

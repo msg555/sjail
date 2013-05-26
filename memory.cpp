@@ -18,12 +18,12 @@
 #include "process_state.h"
 #include "filter.h"
 #include "report.h"
+#include "allocator.h"
 
 static const size_t MAPPING_SIZE = 1 << 12;
 
 static int mfd;
-static void* base_addr;
-static void* addr;
+static memory_allocator<char> safe_mem_allocator;
 
 bool safemem_init() {
   char buf[16] = "/tmp/XXXXXX";
@@ -43,30 +43,34 @@ bool safemem_init() {
     return false;
   }
 
-  base_addr = mmap(NULL, MAPPING_SIZE, PROT_READ | PROT_WRITE,
-                   MAP_SHARED, wmfd, 0);
+  void* base_addr = mmap(NULL, MAPPING_SIZE, PROT_READ | PROT_WRITE,
+                         MAP_SHARED, wmfd, 0);
   if(base_addr == (void*)-1) {
     return false;
   }
   close(wmfd);
 
+  safe_mem_allocator.reset(reinterpret_cast<char*>(base_addr), MAPPING_SIZE);
   return true;
 }
 
 bool safemem_map_unwritable() {
-  if(munmap(base_addr, MAPPING_SIZE)) {
+  if(munmap(const_cast<void*>(reinterpret_cast<const void*>(
+                                            safe_mem_allocator.address())),
+            safe_mem_allocator.size())) {
     return false;
   }
+  safe_mem_allocator.reset(NULL, 0);
   return true;
 }
 
 void* safemem_read_pid(pid_t pid, uintptr_t remote_addr, size_t len) {
-  size_t max_size = (char*)base_addr + MAPPING_SIZE - (char*)addr;
-  if(len > max_size) {
+  char* wptr = safe_mem_allocator.allocate((len + 0x7) * ~0x7);
+  if(!wptr) {
     return NULL;
   }
+  proc[pid].allocations.push_back(std::make_pair(wptr, (len + 0x7) & ~0x7));
 
-  char* wptr = (char*)addr;
   for(size_t i = 0; i < len; ) {
     uintptr_t a = (remote_addr + i) & (sizeof(long) - 1);
     uintptr_t b = std::min(sizeof(long), a + len - i);
@@ -81,14 +85,16 @@ void* safemem_read_pid(pid_t pid, uintptr_t remote_addr, size_t len) {
     i += b - a;
   }
 
-  addr = wptr + ((len + 7) & ~0x7L); 
   return wptr;
 }
 
 void* safemem_read_pid_to_null(pid_t pid, uintptr_t remote_addr) {
-  size_t max_size = (char*)base_addr + MAPPING_SIZE - (char*)addr;
+  size_t max_size;
+  char* wptr = safe_mem_allocator.allocate_largest(&max_size);
+  if(!wptr) {
+    return NULL;
+  }
 
-  char* wptr = (char*)addr;
   for(size_t i = 0; ; ) {
     uintptr_t a = (remote_addr + i) & (sizeof(long) - 1);
 
@@ -101,9 +107,12 @@ void* safemem_read_pid_to_null(pid_t pid, uintptr_t remote_addr) {
     char* vptr = (char*)&v + a;
     for(size_t ie = i + sizeof(long) - a; i != ie; i++, vptr++) {
       if(!(wptr[i] = *vptr)) {
-        addr = wptr + ((i + 7) & ~0x7L); 
+        size_t sz = ((i + 8) & ~0x7);
+        safe_mem_allocator.free(wptr + sz, max_size - sz);
+        proc[pid].allocations.push_back(std::make_pair(wptr, sz));
         return wptr;
       } else if(i + 1 == max_size) {
+        safe_mem_allocator.free(wptr, max_size);
         return NULL;
       }
     }
@@ -112,7 +121,8 @@ void* safemem_read_pid_to_null(pid_t pid, uintptr_t remote_addr) {
 
 uintptr_t safemem_remote_addr(pid_t pid, void* local_ptr) {
   if(!proc[pid].safe_mem_base) return 0;
-  return proc[pid].safe_mem_base + ((char*)local_ptr - (char*)base_addr);
+  return proc[pid].safe_mem_base +
+      (reinterpret_cast<const char*>(local_ptr) - safe_mem_allocator.address());
 }
 
 static bool install_safe_memory(pid_t pid, process_state& st) {
@@ -157,8 +167,12 @@ static bool safemem_filter_mapcall(process_state& st) {
   }
 }
 
-void safemem_reset() {
-  addr = base_addr;
+void safemem_reset(pid_t pid) {
+  for(std::list<std::pair<char*, size_t> >::iterator it =
+      proc[pid].allocations.begin(); it != proc[pid].allocations.end(); ++it) {
+    safe_mem_allocator.free(it->first, it->second);
+  }
+  proc[pid].allocations.clear();
 }
 
 static range_tree<unsigned long> read_maps(pid_t pid,
@@ -171,9 +185,6 @@ static range_tree<unsigned long> read_maps(pid_t pid,
   for(; fmaps && fgets(buf, sizeof(buf), fmaps); ) {
     unsigned long addr, endaddr;
     if(sscanf(buf, "%lx-%lx %6s", &addr, &endaddr, buf) != 3) {
-      break;
-    }
-    if(fscanf(fmaps, "\n") != 0) {
       break;
     }
     if(buf[1] == 'w') {

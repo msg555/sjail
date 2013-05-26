@@ -101,8 +101,7 @@ filter_action filter_system_call(pid_t pid) {
     log_error(pid, "first system call not execve");
     return FILTER_KILL_ALL;
   }
-
-  safemem_reset();
+  safemem_reset(pid);
 
   filter_action action;
   proc[pid].enter_call = !proc[pid].enter_call;
