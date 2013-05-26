@@ -117,6 +117,11 @@ filter_action file_filter::filter_syscall_enter(process_state& st) {
       block = filter_param_access(st, 0, mode, true);
     } break;
 
+    case sys_dup:
+    case sys_dup2:
+    case sys_dup3:
+      break;
+
     default:
       return FILTER_NO_ACTION;
   }
