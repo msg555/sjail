@@ -23,7 +23,7 @@ exec_filter::exec_filter() : fork_count(0), clone_count(0) {
 exec_filter::~exec_filter() {
 }
 
-static filter_action filter_exec(process_state& st) {
+static filter_action filter_exec(pid_data& pdata, process_state& st) {
   pid_t pid = st.get_pid();
   if(!regex_init) {
     if(regcomp(&exec_reg, get_exec_match().c_str(),
@@ -34,7 +34,7 @@ static filter_action filter_exec(process_state& st) {
     regex_init = true;
   }
 
-  char* filename = (char*)safemem_read_pid_to_null(pid, st.get_param(0));
+  char* filename = (char*)safemem_read_pid_to_null(pdata, st.get_param(0));
   if(!filename) {
     log_violation(pid, "could not read exec filename");
     return FILTER_BLOCK_SYSCALL;
@@ -46,7 +46,7 @@ static filter_action filter_exec(process_state& st) {
   }
 
   if(!get_passive()) {
-    uintptr_t rem_addr = safemem_remote_addr(pid, filename);
+    uintptr_t rem_addr = safemem_remote_addr(pdata, filename);
     if(!rem_addr) {
       log_violation(pid, "cannot allow file op without safe mem installed");
       return FILTER_BLOCK_SYSCALL;
@@ -57,11 +57,11 @@ static filter_action filter_exec(process_state& st) {
   return FILTER_PERMIT_SYSCALL;
 }
 
-filter_action exec_filter::filter_syscall_enter(process_state& st) {
+filter_action exec_filter::filter_syscall_enter(pid_data& pdata, process_state& st) {
   bool isfork = false;
   switch(st.get_syscall()) {
     case sys_execve:
-      return filter_exec(st);
+      return filter_exec(pdata, st);
 
     case sys_fork:
     case sys_vfork:
@@ -96,7 +96,8 @@ filter_action exec_filter::filter_syscall_enter(process_state& st) {
   }
 }
 
-filter_action exec_filter::filter_syscall_exit(process_state& st) {
+filter_action exec_filter::filter_syscall_exit(pid_data& pdata,
+                                               process_state& st) {
   bool isfork = false;
   switch(st.get_syscall()) {
     case sys_fork:

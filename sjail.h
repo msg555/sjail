@@ -12,9 +12,17 @@ class filter;
 class process_state;
 
 struct pid_data {
-  bool tracing_proc;
-  bool enter_call;
+  pid_data() : pid(-1) {
+  }
 
+  pid_data(pid_t pid, bool enter_call, uintptr_t safe_mem_base,
+           std::list<filter*>&& filters)
+      : pid(pid), enter_call(enter_call), installing_safe_mem(false),
+        safe_mem_base(safe_mem_base), restore_state(nullptr), filters(filters) {
+  }
+
+  pid_t pid;
+  bool enter_call;
   bool installing_safe_mem;
   uintptr_t safe_mem_base;
   process_state* restore_state;
@@ -51,8 +59,5 @@ enum filter_action {
   FILTER_PERMIT_SYSCALL,
   FILTER_CHANGED_SYSCALL
 };
-
-extern size_t trace_count;
-extern pid_data proc[MAX_PIDS];
 
 #endif // JAIL_JAIL_H

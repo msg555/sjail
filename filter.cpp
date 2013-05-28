@@ -13,19 +13,18 @@
 
 static bool first_call = true;
 
-static filter_action filter_syscall_enter(process_state& st) {
-  pid_t pid = st.get_pid();
+static filter_action filter_syscall_enter(pid_data& pdata, process_state& st) {
   if(get_report() && get_log_level() >= 5) {
-    log_info(pid, 5, std::string("syscall ") +
-              st.get_syscall_name(st.get_syscall()));
+    log_info(pdata.pid, 5, std::string("syscall ") +
+             st.get_syscall_name(st.get_syscall()));
   }
 
   bool block = false;
   bool permit = false;
   bool save = false;
-  for(std::list<filter*>::iterator it = proc[pid].filters.begin();
-      it != proc[pid].filters.end() && !block && !permit; it++) {
-    switch((*it)->filter_syscall_enter(st)) {
+  for(auto i = pdata.filters.begin();
+      i != pdata.filters.end() && !block && !permit; ++i) {
+    switch((*i)->filter_syscall_enter(pdata, st)) {
       case FILTER_KILL_PID: return FILTER_KILL_PID;
       case FILTER_KILL_ALL: return FILTER_KILL_ALL;
       case FILTER_BLOCK_SYSCALL: save = block = true; break;
@@ -38,7 +37,7 @@ static filter_action filter_syscall_enter(process_state& st) {
 
   if(save && !get_passive()) {
     st.set_result(-EPERM);
-    proc[pid].restore_state = new process_state(st);
+    pdata.restore_state = new process_state(st);
   }
 
   if(block && !get_passive()) {
@@ -46,7 +45,7 @@ static filter_action filter_syscall_enter(process_state& st) {
     st.set_syscall(sys_getpid);
     st.save();
     if(st.error()) {
-      log_error(pid, "failed to block syscall");
+      log_error(pdata.pid, "failed to block syscall");
       return FILTER_KILL_PID;
     }
   }
@@ -54,21 +53,19 @@ static filter_action filter_syscall_enter(process_state& st) {
   return FILTER_NO_ACTION;
 }
 
-static filter_action filter_syscall_exit(process_state& st) {
-  pid_t pid = st.get_pid();
-  for(std::list<filter*>::iterator it = proc[pid].filters.begin();
-      it != proc[pid].filters.end(); it++) {
-    switch((*it)->filter_syscall_exit(st)) {
+static filter_action filter_syscall_exit(pid_data& pdata, process_state& st) {
+  for(auto i : pdata.filters) {
+    switch(i->filter_syscall_exit(pdata, st)) {
       case FILTER_KILL_PID: return FILTER_KILL_PID;
       case FILTER_KILL_ALL: return FILTER_KILL_ALL;
       default: break;
     }
   }
 
-  if(proc[pid].restore_state) {
-    st = *proc[pid].restore_state;
-    delete proc[pid].restore_state;
-    proc[pid].restore_state = NULL;
+  if(pdata.restore_state) {
+    st = *pdata.restore_state;
+    delete pdata.restore_state;
+    pdata.restore_state = NULL;
 
     st.save();
     if(st.error()) {
@@ -79,10 +76,10 @@ static filter_action filter_syscall_exit(process_state& st) {
   return FILTER_NO_ACTION;
 }
 
-filter_action filter_system_call(pid_t pid) {
-  process_state st(pid);
+filter_action filter_system_call(pid_data& pdata) {
+  process_state st(pdata.pid);
   if(st.error()) {
-    log_error(pid, "ptrace_getregs failed");
+    log_error(pdata.pid, "ptrace_getregs failed");
     return get_passive() ? FILTER_NO_ACTION : FILTER_KILL_PID;
   }
 
@@ -94,21 +91,21 @@ filter_action filter_system_call(pid_t pid) {
      * is alwasy from exec. */
 		if(true || st.get_syscall() == sys_execve) {
       first_call = false;
-			proc[pid].enter_call = false;
+			pdata.enter_call = false;
       return FILTER_NO_ACTION;
 		}
 
-    log_error(pid, "first system call not execve");
+    log_error(pdata.pid, "first system call not execve");
     return FILTER_KILL_ALL;
   }
-  safemem_reset(pid);
+  safemem_reset(pdata);
 
   filter_action action;
-  proc[pid].enter_call = !proc[pid].enter_call;
-  if(proc[pid].enter_call) {
-    action = filter_syscall_enter(st);
+  pdata.enter_call = !pdata.enter_call;
+  if(pdata.enter_call) {
+    action = filter_syscall_enter(pdata, st);
   } else {
-    action = filter_syscall_exit(st);
+    action = filter_syscall_exit(pdata, st);
   }
 
   return get_passive() ? FILTER_NO_ACTION : action;
@@ -163,7 +160,7 @@ bool filter::unref() {
   return --refs == 0;
 }
 
-void filter::on_exit(pid_t pid, exit_data& data) {
+void filter::on_exit(pid_data& pdata, exit_data& data) {
 }
 
 filter* filter::on_clone() {
@@ -174,11 +171,11 @@ filter* filter::on_fork() {
   return ref();
 }
 
-filter_action filter::filter_syscall_enter(process_state& st) {
+filter_action filter::filter_syscall_enter(pid_data& pdata, process_state& st) {
   return FILTER_NO_ACTION;
 }
 
-filter_action filter::filter_syscall_exit(process_state& st) {
+filter_action filter::filter_syscall_exit(pid_data& pdata, process_state& st) {
   return FILTER_NO_ACTION;
 }
 
@@ -195,7 +192,7 @@ base_filter::base_filter() {
 base_filter::~base_filter() {
 }
 
-void base_filter::on_exit(pid_t pid, exit_data& data) {
+void base_filter::on_exit(pid_data& pdata, exit_data& data) {
   data.wall_time_us = query_wall_time_us() - start_wall_time;
 }
 
@@ -207,7 +204,8 @@ filter* base_filter::on_fork() {
   return new base_filter();
 }
 
-filter_action base_filter::filter_syscall_enter(process_state& st) {
+filter_action base_filter::filter_syscall_enter(pid_data& pdata,
+                                                process_state& st) {
   switch(st.get_syscall()) {
     case sys_brk: break;
 

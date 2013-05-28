@@ -18,7 +18,7 @@
 static int regex_init = false;
 static regex_t file_reg;
 
-bool is_file_allowed(pid_t pid, std::string file) {
+static bool is_file_allowed(pid_t pid, std::string file) {
   if(get_log_level() >= 4) {
     log_info(pid, 4, "open file " + file);
   }
@@ -32,11 +32,12 @@ bool is_file_allowed(pid_t pid, std::string file) {
   return regexec(&file_reg, file.c_str(), (size_t)0, NULL, 0) == 0;
 }
 
-bool filter_param_access(process_state& st, size_t idx, int mode, bool log) {
+static bool filter_param_access(pid_data& pdata, process_state& st,
+                                size_t idx, int mode, bool log) {
   pid_t pid = st.get_pid();
   char fullpath[PATH_MAX];
 
-  char* file = (char*)safemem_read_pid_to_null(pid, st.get_param(idx));
+  char* file = (char*)safemem_read_pid_to_null(pdata, st.get_param(idx));
   if(!file) {
     if(log) log_violation(pid, "could not read path");
     return true;
@@ -62,7 +63,7 @@ bool filter_param_access(process_state& st, size_t idx, int mode, bool log) {
   }
 
   if(!get_passive()) {
-    uintptr_t rem_addr = safemem_remote_addr(pid, file);
+    uintptr_t rem_addr = safemem_remote_addr(pdata, file);
     if(!rem_addr) {
       log_violation(pid, "cannot allow file op without safe mem installed");
       return true;
@@ -79,16 +80,17 @@ file_filter::file_filter() {
 file_filter::~file_filter() {
 }
 
-filter_action file_filter::filter_syscall_enter(process_state& st) {
+filter_action file_filter::filter_syscall_enter(pid_data& pdata,
+                                                process_state& st) {
   bool block = false;
   switch(st.get_syscall()) {
     case sys_access: {
-      block = filter_param_access(st, 0, st.get_param(1), false);
+      block = filter_param_access(pdata, st, 0, st.get_param(1), false);
     } break;
 
     case sys_stat:
     case sys_stat64: {
-      block = filter_param_access(st, 0, R_OK, true);
+      block = filter_param_access(pdata, st, 0, R_OK, true);
     } break;
     case sys_fstat: 
     case sys_fstat64:
@@ -114,7 +116,7 @@ filter_action file_filter::filter_syscall_enter(process_state& st) {
       int mode = F_OK;
       if(flags == O_RDONLY || flags == O_RDWR) mode |= R_OK;
       if(flags == O_WRONLY || flags == O_RDWR) mode |= W_OK;
-      block = filter_param_access(st, 0, mode, true);
+      block = filter_param_access(pdata, st, 0, mode, true);
     } break;
 
     case sys_dup:

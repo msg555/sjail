@@ -1,4 +1,4 @@
-CPPFLAGS = -O3 -Wall -Werror
+CPPFLAGS = -O3 -Wall -Werror -std=c++0x
 
 OBJECTS = \
   out/config.o \

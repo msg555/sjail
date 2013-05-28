@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cstdlib>
+#include <unordered_map>
 
 #include <unistd.h>
 #include <errno.h>
@@ -25,8 +26,7 @@
 
 using namespace std;
 
-size_t trace_count;
-pid_data proc[MAX_PIDS];
+static std::unordered_map<pid_t, pid_data> proc_data;
 
 int syscall_failed(const char* msg) {
   perror(msg);
@@ -46,32 +46,25 @@ int teardown_processes(const char* msg) {
   if(msg) {
     fprintf(stderr, "%s\n", msg);
   }
-  for(size_t i = 0; i < MAX_PIDS; i++) {
-    if(proc[i].tracing_proc) {
-      syscall(SYS_tkill, i, SIGKILL);
-    }
+  for(auto i : proc_data) {
+    syscall(SYS_tkill, i.first, SIGKILL);
   }
+  proc_data.clear();
   return 1;
 }
 
 bool cleanup_process(pid_t pid, exit_data& data) {
-  if(!proc[pid].tracing_proc) {
-    return false;
-  }
-  proc[pid].tracing_proc = false;
-  proc[pid].enter_call = false;
-  for(; !proc[pid].filters.empty(); ) {
-    filter* fltr = *proc[pid].filters.begin();
-    proc[pid].filters.erase(proc[pid].filters.begin());
-
-    fltr->on_exit(pid, data);
-    if(fltr->unref()) {
-      delete fltr;
+  pid_data* pdata = &proc_data[pid];
+  for(auto i : pdata->filters) {
+    i->on_exit(*pdata, data);
+    if(i->unref()) {
+      delete i;
     }
   }
-  --trace_count;
-  log_exit(pid, data, trace_count == 0);
-  if(trace_count == 0) {
+  proc_data.erase(pid);
+
+  log_exit(pid, data, proc_data.empty());
+  if(proc_data.empty()) {
     finalize_report();
     return true;
   }
@@ -89,17 +82,92 @@ static void handle_sigalrm(int signal) {
   }
 }
 
+int sjail_child(char** argv) {
+  if(!safemem_map_unwritable()) {
+    return syscall_failed("failed to map memory");
+  }
+
+  /* Setup chroot if specified. */
+#ifdef PATH_MAX
+  char chroot_path[PATH_MAX];
+#else
+  char chroot_path[4096];
+#endif
+  if(!get_chroot().empty()) {
+    if(chroot_path != realpath(get_chroot().c_str(), chroot_path)) {
+      return syscall_failed("Failed to find real path of chroot");
+    }
+  }
+  if(!get_cwd().empty()) {
+    if(chdir(get_cwd().c_str())) {
+      return syscall_failed("Failed to change working directory");
+    }
+  }
+  if(!get_chroot().empty()) {
+    if(chroot(chroot_path)) {
+      return syscall_failed("Failed to change root directory");
+    }
+  }
+
+  /* Set resource limits. */
+  if(get_time() != TIME_NO_LIMIT) {
+    setlimit(RLIMIT_CPU, get_time());
+  }
+  if(get_mem() != MEM_NO_LIMIT) {
+    setlimit(RLIMIT_AS, get_mem());
+  }
+  if(get_file_limit() != FILE_NO_LIMIT){
+    setlimit(RLIMIT_FSIZE, get_file_limit());
+  }
+
+  /* Set user and groups. */
+  struct passwd* pw_user = NULL;
+  struct passwd* pw_group = NULL;
+  if(!get_group().empty()) {
+    pw_group = getpwnam(get_group().c_str());
+    if(!pw_group) {
+      return syscall_failed("Failed to look up group id");
+    }
+  }
+  if(!get_user().empty()) {
+    pw_user = getpwnam(get_user().c_str());
+    if(!pw_user) {
+      return syscall_failed("Failed to look up user id");
+    }
+  }
+
+  if(pw_group) {
+    if(setresgid(pw_group->pw_uid, pw_group->pw_uid, pw_group->pw_uid)) {
+      return syscall_failed("Failed to set group id");
+    }
+  }
+  if(pw_user) {
+    if(setresuid(pw_user->pw_uid, pw_user->pw_uid, pw_user->pw_uid)) {
+      return syscall_failed("Failed to set user id");
+    }
+  }
+
+  /* Setup trace and execute jailed program. */
+  ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+  execvp(*argv, argv);
+  return syscall_failed("execvp");
+}
+
 int main(int argc, char ** argv) {
-  int res = parse_arguments(argc, argv);
-  if(res == -1 || res == argc) {
+  /* Read in arguments in first pass. */
+  int argend = parse_arguments(argc, argv);
+  if(argend == -1 || argend == argc) {
     print_usage(argv[0]);
     return -1;
   }
 
+  /* If there is a configuration file read that in, but override config file
+   * parameters with command line parameters. */
   if(!get_no_conf()) {
     parse_file(get_conf_file().c_str());
+    parse_arguments(argc, argv);
   }
-  parse_arguments(argc, argv);
+
   if(get_help()) {
     print_usage(argv[0]);
     return 0;
@@ -110,85 +178,23 @@ int main(int argc, char ** argv) {
     return syscall_failed("failed to init memory");
   }
 
+  /* Fork and handle child process. */
   int pid_root = fork();
   if(pid_root == -1) {
     return syscall_failed("fork failed");
   } else if(pid_root == 0) {
-    if(!safemem_map_unwritable()) {
-      return syscall_failed("failed to map memory");
-    }
-
-#ifdef PATH_MAX
-    char chroot_path[PATH_MAX];
-#else
-    char chroot_path[4096];
-#endif
-    if(!get_chroot().empty()) {
-      if(chroot_path != realpath(get_chroot().c_str(), chroot_path)) {
-        return syscall_failed("Failed to find real path of chroot");
-      }
-    }
-    if(!get_cwd().empty()) {
-      if(chdir(get_cwd().c_str())) {
-        return syscall_failed("Failed to change working directory");
-      }
-    }
-    if(!get_chroot().empty()) {
-      if(chroot(chroot_path)) {
-        return syscall_failed("Failed to change root directory");
-      }
-    }
-    if(get_time() != TIME_NO_LIMIT) {
-      setlimit(RLIMIT_CPU, get_time());
-    }
-    if(get_mem() != MEM_NO_LIMIT) {
-      setlimit(RLIMIT_AS, get_mem());
-    }
-    if(get_file_limit() != FILE_NO_LIMIT){
-      setlimit(RLIMIT_FSIZE, get_file_limit());
-    }
-
-    struct passwd* pw_user = NULL;
-    struct passwd* pw_group = NULL;
-    if(!get_group().empty()) {
-      pw_group = getpwnam(get_group().c_str());
-      if(!pw_group) {
-        return syscall_failed("Failed to look up group id");
-      }
-    }
-    if(!get_user().empty()) {
-      pw_user = getpwnam(get_user().c_str());
-      if(!pw_user) {
-        return syscall_failed("Failed to look up user id");
-      }
-    }
-
-    if(pw_group) {
-      if(setresgid(pw_group->pw_uid, pw_group->pw_uid, pw_group->pw_uid)) {
-        return syscall_failed("Failed to set group id");
-      }
-    }
-    if(pw_user) {
-      if(setresuid(pw_user->pw_uid, pw_user->pw_uid, pw_user->pw_uid)) {
-        return syscall_failed("Failed to set user id");
-      }
-    }
-
-    ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-    execvp(argv[res], argv + res);
-    return syscall_failed("execvp");
+    return sjail_child(argv + argend);
   }
 
-  trace_count = 1;
-  proc[pid_root].tracing_proc = true;
-  proc[pid_root].enter_call = true;
-  proc[pid_root].filters = create_root_filters();
+  proc_data[pid_root] = pid_data(pid_root, true, 0U, create_root_filters());
 
+  /* Initialize the report file. */
   if(!init_report()) {
     return teardown_processes("failed to open report file");
   }
   log_create(pid_root, getpid(), CREATE_ROOT);
 
+  /* If a wall timer is set set an alarm to wake us up. */
   if(get_wall_time() != TIME_NO_LIMIT) {
     struct sigaction sigact;
     sigact.sa_handler = handle_sigalrm;
@@ -200,6 +206,7 @@ int main(int argc, char ** argv) {
     alarm(get_wall_time());
   }
 
+  /* Main trace loop. */
   for(bool firstTrace = true; ; firstTrace = false) {
     pid_t pid;
     int status;
@@ -217,9 +224,13 @@ int main(int argc, char ** argv) {
       syscall_failed("wait3");
       return teardown_processes(NULL);
     }
-    if(MAX_PIDS <= (size_t)pid) {
+
+    auto it_pdata = proc_data.find(pid);
+    if(it_pdata == proc_data.end()) {
       return teardown_processes("unexpected pid from wait");
     }
+    pid_data& pdata = it_pdata->second;
+
     if(firstTrace) {
       /* The first time we wait for the child is on exit to execve.  After this
        * syscalls traps will have bit 15 set in the status due to TRACESYSGOOD.
@@ -256,17 +267,19 @@ int main(int argc, char ** argv) {
           return teardown_processes(NULL);
         } else if(MAX_PIDS <= (size_t)child_pid) {
           return teardown_processes("unexpected child pid from ptrace");
-        } else if(proc[child_pid].tracing_proc) {
+        } else if(proc_data.find(child_pid) != proc_data.end()) {
           return teardown_processes("already tracing child");
         } else {
-          trace_count++;
-          proc[child_pid].tracing_proc = true;
-          proc[child_pid].safe_mem_base = proc[pid].safe_mem_base;
           if((status >> 16 & 0xFFFF) == PTRACE_EVENT_CLONE) {
-            proc[child_pid].filters = clone_filters(proc[pid].filters);
+            proc_data[child_pid] =
+                pid_data(child_pid, false, pdata.safe_mem_base,
+                         clone_filters(pdata.filters));
+            pdata.filters = clone_filters(pdata.filters);
             log_create(child_pid, pid, CREATE_CLONE);
           } else {
-            proc[child_pid].filters = fork_filters(proc[pid].filters);
+            proc_data[child_pid] =
+                pid_data(child_pid, false, pdata.safe_mem_base,
+                         fork_filters(pdata.filters));
             log_create(child_pid, pid, CREATE_FORK);
           }
         }
@@ -274,7 +287,7 @@ int main(int argc, char ** argv) {
         errno = 0;
         ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
       } else if(sig == (SIGTRAP | 0x80)) try {
-        switch(filter_system_call(pid)) {
+        switch(filter_system_call(pdata)) {
           case FILTER_KILL_PID: {
             exit_data data(EXIT_KILLED, &resources);
             if(ptrace(PTRACE_KILL, pid, NULL, NULL)) {

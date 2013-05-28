@@ -10,7 +10,7 @@
 class filter;
 class process_state;
 
-filter_action filter_system_call(pid_t pid);
+filter_action filter_system_call(pid_data& pdata);
 
 std::list<filter*> create_root_filters();
 
@@ -25,12 +25,12 @@ class filter {
   filter* ref();
   bool unref();
   
-  virtual void on_exit(pid_t pid, exit_data& data);
+  virtual void on_exit(pid_data& pdata, exit_data& data);
   virtual filter* on_clone();
   virtual filter* on_fork();
 
-  virtual filter_action filter_syscall_enter(process_state& st);
-  virtual filter_action filter_syscall_exit(process_state& st);
+  virtual filter_action filter_syscall_enter(pid_data& pdata, process_state& st);
+  virtual filter_action filter_syscall_exit(pid_data& pdata, process_state& st);
 
  private:
   int refs;
@@ -41,11 +41,12 @@ class base_filter : public filter {
   base_filter();
   virtual ~base_filter();
 
-  virtual void on_exit(pid_t pid, exit_data& data);
+  virtual void on_exit(pid_data& pdata, exit_data& data);
   virtual filter* on_clone();
   virtual filter* on_fork();
 
-  virtual filter_action filter_syscall_enter(process_state& st);
+  virtual filter_action filter_syscall_enter(pid_data& pdata,
+                                             process_state& st);
 
  private:
   unsigned long long start_wall_time;
@@ -56,11 +57,12 @@ class memory_filter : public filter {
   memory_filter();
   virtual ~memory_filter();
 
-  virtual void on_exit(pid_t pid, exit_data& data);
+  virtual void on_exit(pid_data& pdata, exit_data& data);
   virtual filter* on_fork();
 
-  virtual filter_action filter_syscall_enter(process_state& st);
-  virtual filter_action filter_syscall_exit(process_state& st);
+  virtual filter_action filter_syscall_enter(pid_data& pdata,
+                                             process_state& st);
+  virtual filter_action filter_syscall_exit(pid_data& pdata, process_state& st);
 
  private:
   unsigned long heap_base;
@@ -76,7 +78,8 @@ class file_filter : public filter {
   file_filter();
   virtual ~file_filter();
 
-  virtual filter_action filter_syscall_enter(process_state& st);
+  virtual filter_action filter_syscall_enter(pid_data& pdata,
+                                             process_state& st);
 };
 
 class exec_filter : public filter {
@@ -84,8 +87,9 @@ class exec_filter : public filter {
   exec_filter();
   virtual ~exec_filter();
 
-  virtual filter_action filter_syscall_enter(process_state& st);
-  virtual filter_action filter_syscall_exit(process_state& st);
+  virtual filter_action filter_syscall_enter(pid_data& pdata,
+                                             process_state& st);
+  virtual filter_action filter_syscall_exit(pid_data& pdata, process_state& st);
 
  private:
   size_t fork_count;
@@ -97,7 +101,8 @@ class net_filter : public filter {
   net_filter();
   virtual ~net_filter();
 
-  virtual filter_action filter_syscall_enter(process_state& st);
+  virtual filter_action filter_syscall_enter(pid_data& pdata,
+                                             process_state& st);
 };
 
 #endif // JAIL_FILTER_H

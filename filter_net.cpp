@@ -42,7 +42,8 @@
 static int regex_init = false;
 static regex_t net_reg;
 
-static bool remote_client_allowed(pid_t pid, param_t* args) {
+static bool remote_client_allowed(pid_data& pdata, param_t* args) {
+  pid_t pid = pdata.pid;
   param_t addr = args[0];
   param_t addr_sz = args[1];
   if(addr == 0) {
@@ -53,7 +54,7 @@ static bool remote_client_allowed(pid_t pid, param_t* args) {
   }
 
   char buf[INET6_ADDRSTRLEN];
-  void* vaddr = safemem_read_pid(pid, addr, addr_sz);
+  void* vaddr = safemem_read_pid(pdata, addr, addr_sz);
   if(!vaddr) {
     log_violation(pid, "unreadable remote address family");
     return false;
@@ -131,7 +132,7 @@ static bool remote_client_allowed(pid_t pid, param_t* args) {
   }
 
   if(!get_passive()) {
-    uintptr_t rem_addr = safemem_remote_addr(pid, vaddr);
+    uintptr_t rem_addr = safemem_remote_addr(pdata, vaddr);
     if(!rem_addr) {
       log_violation(pid, "cannot allow net op without safe mem installed");
       return false;
@@ -149,10 +150,11 @@ net_filter::net_filter() {
 net_filter::~net_filter() {
 }
 
-filter_action net_filter::filter_syscall_enter(process_state& st) {
+filter_action net_filter::filter_syscall_enter(pid_data& pdata,
+                                               process_state& st) {
   int op;
   bool generic_call = false;
-  pid_t pid = st.get_pid();
+  pid_t pid = pdata.pid;
   switch(st.get_syscall()) {
     case sys_socketcall:
       generic_call = true;
@@ -239,7 +241,7 @@ filter_action net_filter::filter_syscall_enter(process_state& st) {
   param_t s_params[6];
   if(generic_call) {
     size_t width = st.word_width();
-    params = safemem_read_pid(pid, st.get_param(1), nargs * width);
+    params = safemem_read_pid(pdata, st.get_param(1), nargs * width);
     if(!params) {
       log_violation(pid, "could not read socketcall parameters");
       return FILTER_BLOCK_SYSCALL;
@@ -255,7 +257,7 @@ filter_action net_filter::filter_syscall_enter(process_state& st) {
   }
 
   if(addr_pos < nargs &&
-     !remote_client_allowed(pid, s_params + addr_pos)) {
+     !remote_client_allowed(pdata, s_params + addr_pos)) {
     return FILTER_BLOCK_SYSCALL;
   }
 
@@ -303,7 +305,7 @@ filter_action net_filter::filter_syscall_enter(process_state& st) {
       st.write_uword((char*)params + i * width, s_params[i]);
     }
 
-    uintptr_t rem_addr = safemem_remote_addr(pid, params);
+    uintptr_t rem_addr = safemem_remote_addr(pdata, params);
     if(!rem_addr) {
       log_violation(pid, "cannot allow socketcall without safe mem installed");
       return FILTER_BLOCK_SYSCALL;
