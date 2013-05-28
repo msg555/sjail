@@ -269,7 +269,7 @@ int main(int argc, char ** argv) {
           return teardown_processes("unexpected child pid from ptrace");
         } else if(proc_data.find(child_pid) != proc_data.end()) {
           return teardown_processes("already tracing child");
-        } else {
+        } else try {
           if((status >> 16 & 0xFFFF) == PTRACE_EVENT_CLONE) {
             proc_data[child_pid] =
                 pid_data(child_pid, false, pdata.safe_mem_base,
@@ -282,6 +282,9 @@ int main(int argc, char ** argv) {
                          fork_filters(pdata.filters));
             log_create(child_pid, pid, CREATE_FORK);
           }
+        } catch(std::bad_alloc) {
+          log_error(pid, "out of state space");
+          return teardown_processes("out of memory");
         }
 
         errno = 0;
